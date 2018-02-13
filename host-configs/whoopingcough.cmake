@@ -101,9 +101,8 @@ set(CONDUIT_DIR "/disk2TB/proj/ascent/conduit/conduit/install" CACHE PATH "")
 set(ASCENT_VTKM_USE_TBB OFF CACHE PATH "")
 #set(TBB_DIR "/usr/include" CACHE PATH "")
 
-# vtkm/h
-set(VTKM_DIR "/disk2TB/proj/ascent/vtk-m/install" CACHE PATH "")
-set(VTKH_DIR "/disk2TB/proj/ascent/vtk-h/vtk-h/install" CACHE PATH "")
+# vtkm
+set(VTKM_DIR "/home/pugmire/proj/vtkm/kitware.master/install" CACHE PATH "")
 
 # HDF5 support (optional)
 #

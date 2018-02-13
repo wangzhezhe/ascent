@@ -107,7 +107,7 @@ set(ASCENT_VTKM_USE_TBB OFF CACHE PATH "")
 #set(TBB_DIR "/usr/include" CACHE PATH "")
 
 # vtkm
-set(VTKM_DIR "/disk2TB/proj/alpine/vtkm/install" CACHE PATH "")
+set(VTKM_DIR "/home/pugmire/proj/vtkm/kitware.master/install" CACHE PATH "")
 
 # HDF5 support (optional)
 #

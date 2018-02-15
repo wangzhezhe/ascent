@@ -82,8 +82,7 @@ set(MPIEXEC /usr/bin/mpirun CACHE PATH "")
 set(MPIEXEC_NUMPROC_FLAG -n CACHE PATH "")
 
 ##Disable python
-set(ENABLE_PYTHON OFF)
-
+set(ENABLE_PYTHON OFF CACHE PATH "")
 
 
 # CUDA support
@@ -93,28 +92,25 @@ set(ENABLE_PYTHON OFF)
 set(ENABLE_CUDA OFF CACHE PATH "")
 
 # conduit 
-set(CONDUIT_DIR "/home/pugmire/proj/alpine/conduit/install-debug" CACHE PATH "")
+set(CONDUIT_DIR "/disk2TB/proj/ascent/conduit/conduit/install" CACHE PATH "")
 
 # icet 
-set(ICET_DIR "/disk2TB/proj/alpine/icet/install" CACHE PATH "")
-
-#
-# vtkm
-#
+#set(ICET_DIR "/disk2TB/proj/alpine/icet/install" CACHE PATH "")
 
 # tbb
 set(ASCENT_VTKM_USE_TBB OFF CACHE PATH "")
 #set(TBB_DIR "/usr/include" CACHE PATH "")
 
-# vtkm
-set(VTKM_DIR "/disk2TB/proj/alpine/vtkm/install" CACHE PATH "")
+# vtkm/h
+set(VTKM_DIR "/disk2TB/proj/ascent/vtk-m/install" CACHE PATH "")
+set(VTKH_DIR "/disk2TB/proj/ascent/vtk-h/vtk-h/install" CACHE PATH "")
 
 # HDF5 support (optional)
 #
 # hdf5v
 set(HDF5_DIR "/apps/visit/thirdparty/visit/hdf5/1.8.14/linux-x86_64_gcc-5.4" CACHE PATH "")
 
-set(ADIOS_DIR "/apps/adios" CACHE PATH "")
+set(ADIOS_DIR "/apps/adios/install" CACHE PATH "")
 
 #SPHINX documentation building
 #set("SPHINX_EXECUTABLE" "/path/to/sphinx-build" CACHE PATH "")

@@ -56,6 +56,9 @@
 #include <string.h>
 #include <limits.h>
 #include <cstdlib>
+#include <chrono>
+#include <sys/time.h>
+#include <mpi.h>
 
 using namespace conduit;
 using namespace std;
@@ -332,9 +335,19 @@ Workspace::execute()
                 f->set_input(port_name,&registry().fetch(f_input_name));
             }
 
+            MPI_Comm c_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+            int nRanks, rank;
+            MPI_Comm_size(c_comm, &nRanks);
+            MPI_Comm_rank(c_comm, &rank);
+
 
             // execute 
+            auto startT = std::chrono::steady_clock::now();
             f->execute();
+            auto endT = std::chrono::steady_clock::now();
+            auto diff = endT - startT;
+            cout << "FLOW filter (" << rank << "/"<< nRanks << ") -> " << f->name() << " <- wall time = "  
+               << std::chrono::duration<double, std::milli>(diff).count() << " ms\n" << endl;
 
             // if has output, set output
             if(f->output_port())

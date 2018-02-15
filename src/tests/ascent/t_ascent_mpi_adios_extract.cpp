@@ -120,8 +120,18 @@ TEST(ascent_mpi_runtime, test_render_mpi_2d_main_runtime)
     conduit::Node extracts;
     extracts["e1/type"]  = "adios";
     // populate some param examples
-    extracts["e1/params/transport"] = "file";
-    extracts["e1/params/filename"] = output_file;
+    bool doFile = false;
+    
+    if (doFile)
+    {
+        extracts["e1/params/transport"] = "file";
+        extracts["e1/params/filename"] = output_file;
+    }
+    else
+    {
+        extracts["e1/params/transport"] = "staging";
+        extracts["e1/params/filename"] = "staging.bp";
+    }
   
     //
     // we can tell adios to do actions with the published data

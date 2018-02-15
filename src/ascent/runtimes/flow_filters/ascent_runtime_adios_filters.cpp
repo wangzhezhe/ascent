@@ -81,8 +81,10 @@ TODO:
 #define _NOMPI
 #endif
 
-
 #include <adios.h>
+#include <adios_read.h>
+#include <adios_error.h>
+
 #include <set>
 #include <cstring>
 #include <limits>
@@ -228,21 +230,29 @@ ADIOS::execute()
     transportType = params()["transport"].as_string();
     fileName      = params()["filename"].as_string();
 
-    // get params
-    
+    const string groupName = "ascent";
     if (transportType == "file")
     {
         adios_init_noxml(mpi_comm);
-        //adios_set_max_buffer_size(100);
-        adios_declare_group(&adiosGroup, "test_data", "iter", adios_stat_default);
+        adios_declare_group(&adiosGroup, groupName.c_str(), "iter", adios_stat_default);
         adios_select_method(adiosGroup, "MPI", "", "");
-        adios_open(&adiosFile, "test_data", fileName.c_str(), "w", mpi_comm);
+        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
+    }
+    else if (transportType == "staging")
+    {
+        int rc = adios_read_init_method(ADIOS_READ_METHOD_DATASPACES, mpi_comm, "verbose=4");
+        if (rc != 0)
+            ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
+        
+        adios_init_noxml(mpi_comm);
+        adios_declare_group(&adiosGroup, groupName.c_str(), "iter", adios_stat_default);
+        adios_select_method(adiosGroup, "DATASPACES", "", "");
+        
+        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
     }
     else
-    {
-        //  if (transportType == "staging")
-        ASCENT_ERROR("Transport type: " <<transportType << " not supported!");
-    }
+        ASCENT_ERROR("Unsupported transport type");
+    
     adios_define_schema_version(adiosGroup, (char*)"1.1");
 
     //Fetch input data
@@ -278,6 +288,7 @@ ADIOS::execute()
             FieldVariable(field_name, field);
         }
     }
+    
     adios_close(adiosFile);
 
 }

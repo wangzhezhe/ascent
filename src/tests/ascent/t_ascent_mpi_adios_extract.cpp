@@ -120,7 +120,7 @@ TEST(ascent_mpi_runtime, test_render_mpi_2d_main_runtime)
     conduit::Node extracts;
     extracts["e1/type"]  = "adios";
     // populate some param examples
-    bool doFile = false;
+    bool doFile = true;
     
     if (doFile)
     {

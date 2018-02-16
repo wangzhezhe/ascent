@@ -19,7 +19,21 @@
       }
     }
   },
-  
+   {
+    "action": "add_extracts",
+    "extracts": 
+    {
+      "e1": 
+      {
+        "type": "adios",
+         "params": 
+         {
+             "filename": "output.bp",
+             "transport": "staging"
+         }
+       }
+    }
+  },
   {
     "action": "execute"
   },

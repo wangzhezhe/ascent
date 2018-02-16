@@ -299,6 +299,9 @@ Workspace::traversals(Node &traversals)
     ExecutionPlan::generate(graph(),traversals);
 }
 
+static int cnt = 0;
+static ofstream *timingInfo = NULL;
+    
 //-----------------------------------------------------------------------------
 void
 Workspace::execute()
@@ -309,7 +312,7 @@ Workspace::execute()
     
     // execute traversals 
     NodeIterator travs_itr = traversals.children();
-    
+
     while(travs_itr.has_next())
     {
         NodeIterator trav_itr(&travs_itr.next());
@@ -334,7 +337,7 @@ Workspace::execute()
                 std::string f_input_name = graph().edges_in(f_name)[port_name].as_string();
                 f->set_input(port_name,&registry().fetch(f_input_name));
             }
-
+            
             MPI_Comm c_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
             int nRanks, rank;
             MPI_Comm_size(c_comm, &nRanks);
@@ -346,8 +349,19 @@ Workspace::execute()
             f->execute();
             auto endT = std::chrono::steady_clock::now();
             auto diff = endT - startT;
-            cout << "FLOW filter (" << rank << "/"<< nRanks << ") -> " << f->name() << " <- wall time = "  
-               << std::chrono::duration<double, std::milli>(diff).count() << " ms\n" << endl;
+            auto dt = std::chrono::duration<double, std::milli>(diff).count();
+            if (timingInfo == NULL)
+            {
+                timingInfo = new ofstream;
+                char nm[32];
+                sprintf(nm, "timing.%d.out", rank);
+                timingInfo->open(nm, ofstream::out);
+            }
+            (*timingInfo)<<cnt<<", FLOWfilter_"<<rank<<"_"<<nRanks<<", "<<f->name()<<", "<<dt<<endl;
+            
+            cout<<cnt<<", FLOWfilter_"<<rank<<"_"<<nRanks<<", "<<f->name()<<", "<<dt<<endl;
+//            cout << "FLOW filter (" << rank << "/"<< nRanks << ") -> " << f->name() << " <- wall time = "  
+//               << std::chrono::duration<double, std::milli>(diff).count() << " ms\n" << endl;
 
             // if has output, set output
             if(f->output_port())
@@ -375,7 +389,7 @@ Workspace::execute()
         }
     }
     
-    
+    cnt++;
 }
 
 

@@ -305,7 +305,7 @@ ADIOS::execute()
     
     adios_close(adiosFile); 
     //adios_advance_step(adiosFile, 0, 1000);
-    //step++;
+    step++;
 }
 
 //-----------------------------------------------------------------------------

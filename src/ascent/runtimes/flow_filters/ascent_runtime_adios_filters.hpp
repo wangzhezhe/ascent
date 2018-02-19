@@ -105,6 +105,7 @@ private:
                                  std::vector<std::vector<double>> &globalCoords);
 
     int rank, numRanks;
+    int step;
 #ifdef ASCENT_MPI_ENABLED
     MPI_Comm mpi_comm;
 #else

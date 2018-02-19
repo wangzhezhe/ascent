@@ -162,6 +162,7 @@ ADIOS::ADIOS()
     rank = 0;
     numRanks = 1;
     meshName = "mesh";
+    step = 0;
     globalDims.resize(3);
     localDims.resize(3);
     offset.resize(3);
@@ -238,18 +239,31 @@ ADIOS::execute()
         adios_select_method(adiosGroup, "MPI", "", "");
         adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
     }
-    else if (transportType == "staging")
+    else if (transportType == "dataspaces")
     {
         int rc = adios_read_init_method(ADIOS_READ_METHOD_DATASPACES, mpi_comm, "verbose=4");
         if (rc != 0)
             ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
         
         adios_init_noxml(mpi_comm);
-        adios_declare_group(&adiosGroup, groupName.c_str(), "iter", adios_stat_default);
+        adios_declare_group(&adiosGroup, groupName.c_str(), "", adios_stat_default);
         adios_select_method(adiosGroup, "DATASPACES", "", "");
         
-        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
+        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
     }
+    else if (transportType == "dimes")
+    {
+        int rc = adios_read_init_method(ADIOS_READ_METHOD_DIMES, mpi_comm, "verbose=4");
+        if (rc != 0)
+            ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
+        
+        adios_init_noxml(mpi_comm);
+        adios_declare_group(&adiosGroup, groupName.c_str(), "", adios_stat_default);
+        adios_select_method(adiosGroup, "DIMES", "", "");
+        
+        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
+    }
+
     else
         ASCENT_ERROR("Unsupported transport type");
     
@@ -289,8 +303,9 @@ ADIOS::execute()
         }
     }
     
-    adios_close(adiosFile);
-
+    adios_close(adiosFile); 
+    //adios_advance_step(adiosFile, 0, 1000);
+    //step++;
 }
 
 //-----------------------------------------------------------------------------

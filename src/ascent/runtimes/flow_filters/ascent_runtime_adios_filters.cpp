@@ -241,27 +241,37 @@ ADIOS::execute()
     }
     else if (transportType == "dataspaces")
     {
-        int rc = adios_read_init_method(ADIOS_READ_METHOD_DATASPACES, mpi_comm, "verbose=4");
-        if (rc != 0)
-            ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
+        if (step == 0)
+        {
+            int rc = adios_read_init_method(ADIOS_READ_METHOD_DATASPACES, mpi_comm, "verbose=4");
+            if (rc != 0)
+                ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
+            
+            adios_init_noxml(mpi_comm);
+            adios_declare_group(&adiosGroup, groupName.c_str(), "", adios_stat_default);
+            adios_select_method(adiosGroup, "DATASPACES", "", "");
+            adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
+        }
         
-        adios_init_noxml(mpi_comm);
-        adios_declare_group(&adiosGroup, groupName.c_str(), "", adios_stat_default);
-        adios_select_method(adiosGroup, "DATASPACES", "", "");
-        
-        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
+        //adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
+        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
     }
     else if (transportType == "dimes")
     {
-        int rc = adios_read_init_method(ADIOS_READ_METHOD_DIMES, mpi_comm, "verbose=4");
-        if (rc != 0)
-            ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
+        if (step == 0)
+        {
+            int rc = adios_read_init_method(ADIOS_READ_METHOD_DIMES, mpi_comm, "verbose=4");
+            if (rc != 0)
+                ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
+            
+            adios_init_noxml(mpi_comm);
+            adios_declare_group(&adiosGroup, groupName.c_str(), "", adios_stat_default);
+            adios_select_method(adiosGroup, "DIMES", "", "");
+            adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
+        }
         
-        adios_init_noxml(mpi_comm);
-        adios_declare_group(&adiosGroup, groupName.c_str(), "", adios_stat_default);
-        adios_select_method(adiosGroup, "DIMES", "", "");
-        
-        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
+        //adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
+        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
     }
 
     else
@@ -434,7 +444,8 @@ ADIOS::RectilinearMeshSchema(const Node &node)
         cout<<rank<<": offset: "<<dimsToStr(offset)<<endl;
         */
         
-        adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
+        //adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
+
         adios_define_mesh_rectilinear((char*)dimsToStr(globalDims).c_str(),
                                       (char*)(coordNames[0]+","+coordNames[1]+","+coordNames[2]).c_str(),
                                       0,

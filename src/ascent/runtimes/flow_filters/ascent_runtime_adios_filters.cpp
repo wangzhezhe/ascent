@@ -163,10 +163,10 @@ ADIOS::ADIOS()
     numRanks = 1;
     meshName = "mesh";
     step = 0;
-    globalDims.resize(3);
-    localDims.resize(3);
-    offset.resize(3);
-    for (int i = 0; i < 3; i++)
+    globalDims.resize(4);
+    localDims.resize(4);
+    offset.resize(4);
+    for (int i = 0; i < 4; i++)
         globalDims[i] = localDims[i] = offset[i] = 0;
     
 #ifdef ASCENT_MPI_ENABLED
@@ -174,6 +174,9 @@ ADIOS::ADIOS()
     MPI_Comm_rank(mpi_comm, &rank);
     MPI_Comm_size(mpi_comm, &numRanks);
 #endif
+    globalDims[0] = numRanks;
+    localDims[0] = 1;
+    offset[0] = rank;
 }
 
 //-----------------------------------------------------------------------------
@@ -338,7 +341,8 @@ ADIOS::CalcRectilinearMeshInfo(const conduit::Node &node,
                                Y.as_float64_ptr(),
                                Z.as_float64_ptr()};
 
-    localDims = {X.dtype().number_of_elements(),
+    localDims = {1,
+                 X.dtype().number_of_elements(),
                  Y.dtype().number_of_elements(),
                  Z.dtype().number_of_elements()};
 
@@ -346,8 +350,8 @@ ADIOS::CalcRectilinearMeshInfo(const conduit::Node &node,
     XYZ.resize(3);
     for (int i = 0; i < 3; i++)
     {
-        XYZ[i].resize(localDims[i]);
-        std::memcpy(&(XYZ[i][0]), xyzPtr[i], localDims[i]*sizeof(double));
+        XYZ[i].resize(localDims[i+1]);
+        std::memcpy(&(XYZ[i][0]), xyzPtr[i], localDims[i+1]*sizeof(double));
     }
 
     //Participation trophy if you only bring 1 rank to the game.
@@ -372,22 +376,27 @@ ADIOS::CalcRectilinearMeshInfo(const conduit::Node &node,
         return false;
 
     //Calculate the global dims. This is just the sum of all the localDims.
-    globalDims = {0,0,0};
+    globalDims = {numRanks,localDims[1],localDims[2],localDims[3]};
+#if 0
+    globalDims = {numRanks,0,0,0};
     for (int i = 0; i < buff.size(); i+=3)
     {
-        globalDims[0] += buff[i + 0];
-        globalDims[1] += buff[i + 1];
-        globalDims[2] += buff[i + 2];
+        globalDims[1] += buff[i + 0];
+        globalDims[2] += buff[i + 1];
+        globalDims[3] += buff[i + 2];
     }
+#endif
     
     //And now for the offsets. It is the sum of all the localDims before me.
-    offset = {0,0,0};
+    offset = {rank,0,0,0};
+    /*
     for (int i = 0; i < rank; i++)
     {
         offset[0] += buff[i*3 + 0];
         offset[1] += buff[i*3 + 1];
         offset[2] += buff[i*3 + 2];        
     }
+    */
 
 #if 0
     if (rank == 0)
@@ -457,13 +466,22 @@ ADIOS::RectilinearMeshSchema(const Node &node)
     int64_t ids[3];
     for (int i = 0; i < 3; i++)
     {
+        vector<int64_t> l = {1,localDims[i+1]};
+        vector<int64_t> g = {numRanks,globalDims[i+1]};
+        vector<int64_t> o = {rank,offset[i+1]};
         ids[i] = adios_define_var(adiosGroup,
                                   coordNames[i].c_str(),
                                   "",
                                   adios_double,
-                                  to_string(localDims[i]).c_str(),
-                                  to_string(globalDims[i]).c_str(),
-                                  to_string(offset[i]).c_str());
+                                  dimsToStr(l).c_str(),
+                                  dimsToStr(g).c_str(),
+                                  dimsToStr(o).c_str());
+        
+                                  /*
+                                  to_string(localDims[1+i]).c_str(),
+                                  to_string(globalDims[1+i]).c_str(),
+                                  to_string(offset[1+i]).c_str());
+                                  */
         adios_write_byid(adiosFile, ids[i], (void *)&(XYZ[i][0]));
     }
     

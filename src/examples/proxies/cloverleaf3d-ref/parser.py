@@ -9,6 +9,7 @@ timingFiles = glob.glob('%s' % inputFilePattern)
 if len(timingFiles) == 0 :
     print 'Error. No input files found'
     sys.exit(-1)
+couplingType = sys.argv[4]   
 
 
 def dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile) :
@@ -38,8 +39,9 @@ def dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, o
                  print 'Unsupported selector type',  type(s)
 
             if val != None :
-               output = '%d, %s%s, %f' % (c,f,sel, val)
-               outputFile.write('%s\n' % output)
+               if f == "appTime" or f == 'ensure_blueprint_ADIOS' or (f == 'source' and couplingType == 'loose'):
+                   output = '%d, %s%s, %f' % (c,f,sel, val)
+                   outputFile.write('%s\n' % output)
         output = '%d, Max_Contour, %f' % (c, contourTime)
         outputFile.write('%s\n' % output)
         output = '%d, Max_Render, %f' % (c, renderTime)
@@ -58,7 +60,6 @@ stats = []
 
 appOutputFile = sys.argv[2]
 outputFile = open(sys.argv[3], 'w') 
-couplingType = sys.argv[4]   
 
 ## Process application output file
 appLines = open(appOutputFile, 'r').readlines()
@@ -103,10 +104,10 @@ if couplingType == 'tight' :
 
 ##---- settings for loose coupling
 elif couplingType == 'loose' :
-    fields = ['appTime']
-    selector = [0]
-    contourTimeList = []
-    renderTimeList = []
+    fields = ['appTime', 'source', 'ensure_blueprint_ADIOS']
+    selector = [0, 'max', 'max']
+    contourTimeList = ['contour']
+    renderTimeList = ['render']
 ##----
 
 dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile)
@@ -118,7 +119,7 @@ for tf in timingFiles :
     inputLines = open(tf, 'r').readlines()
     lastCycle = -1
     for l in inputLines :
-        if 'FLOWfilter' in l :
+        if 'FLOWfilter' in l or 'VISapp' in l :
             data = l.split(',')
             cycle = int(data[0])
             rank = int(data[1].split('_')[1])

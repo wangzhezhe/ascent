@@ -12,10 +12,98 @@ if len(timingFiles) == 0 :
 couplingType = sys.argv[4]   
 
 
+def GetValue(values, s) :
+    if type(s) is int :
+        return values[s]
+    elif type(s) is str :
+        if s == 'avg' :
+            return sum(values) / float(len(values))
+        elif s == 'max' :
+            return max(values)
+        elif s == 'min' :
+            return min(values)
+    return None
+
+
+def dumpSummaryAverages(stats, fields, selector, outputFile) :
+    total = [0.0] * len(fields)
+    mins = [1e10] * len(fields)
+    maxs = [-1e10] * len(fields)
+    labels = []
+    
+    for f in fields :
+        if type(f) is str : labels.append(f)
+        else : labels.append(f[0])
+            
+    for c in range(len(stats)) :
+        stat = stats[c]
+        print stat
+        cTotal = []
+        for (f,s) in zip(fields,selector) :
+            values = []
+            if type(f) is str :
+                statName = f
+                print f
+                print stat
+                values = stat[f]
+                
+            elif type(f) is list :
+                statName = f[0]
+                subNames = f[1]
+                values = [0.0] * len(stat[subNames[0]])
+                for fi in subNames :
+                    vi = stat[fi]
+                    values = [sum(i) for i in zip(vi,values)]
+
+            value = GetValue(values, s)
+            cTotal.append(value)
+        mins = [min(i) for i in zip(mins, cTotal)]
+        maxs = [max(i) for i in zip(maxs, cTotal)]
+        total = [sum(i) for i in zip(total, cTotal)]
+
+    ##Averages:
+    avg = []
+    for t in total :
+        avg.append(t/float(len(stats)))
+    outputFile.write('Field, Avg, Min, Max\n')
+    for (l,a, vm, vM) in zip(labels, avg, mins, maxs) :
+        outputFile.write('%s, %f, %f, %f\n' % (l, a, vm, vM))
+    outputFile.write('\n\n')
+        
+
+def dumpSummaryStats2(stats, fields, selector, outputFile) :
+
+    outputFile.write('Per cycle data\n')
+    outputFile.write('Cycle, Field, Value\n')
+    for c in range(len(stats)) :
+        stat = stats[c]
+
+        for (f,s) in zip(fields,selector) :
+            values = []
+            if type(f) is str :
+                statName = f
+                values = stat[f]
+                
+            elif type(f) is list :
+                statName = f[0]
+                subNames = f[1]
+                values = [0.0] * len(stat[subNames[0]])
+                for fi in subNames :
+                    vi = stat[fi]
+                    values = [sum(i) for i in zip(vi,values)]
+
+#            print statName, values
+            value = GetValue(values, s)
+            outputFile.write('%d, %s, %f\n' % (c, statName, value))
+        outputFile.write('\n')
+#            print statName, value
+#            print
+
+
 def dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile) :
 
     outputFile.write('Cycle, Field, Value\n')
-    for c in range(len(stats)) :         
+    for c in range(len(stats)) :
         stat = stats[c]
         val = None
         contourTime = 0
@@ -68,7 +156,7 @@ cycle = 0
 for al in appLines :
     if 'Wall clock' in al :
        t1 = float(al.split()[2])
-       appTime = t1-t0
+       appTime = (t1-t0) * 1000.0 ##convert to ms
        t0 = t1
        cycle = cycle+1
        stats.append({'appTime' : [appTime]})
@@ -77,7 +165,21 @@ for tf in timingFiles :
     inputLines = open(tf, 'r').readlines()
     lastCycle = -1
     for l in inputLines :
-        if 'FLOWfilter' in l :
+        if 'VISapp_' in l :
+            data = l.split(',')
+            cycle = int(data[0])
+            rank = int(data[1].split('_')[1])
+            nRanks = int(data[1].split('_')[2])
+            operation = data[2].strip()
+            timeMS = float(data[3])            
+            if cycle >= len(stats) :
+               print 'cycle overrun...', cycle, len(stats)
+               continue
+            if not stats[cycle].has_key(operation) :
+               stats[cycle][operation] = []
+            stats[cycle][operation].append(timeMS)
+
+        elif 'FLOWfilter' in l :
             data = l.split(',')
             cycle = int(data[0])
             rank = int(data[1].split('_')[1])
@@ -92,25 +194,21 @@ for tf in timingFiles :
                stats[cycle][operation] = []
             stats[cycle][operation].append(timeMS)
 
-
-#Print summary stats:
-##---- settings for tight coupling
 if couplingType == 'tight' :
-    fields = ['appTime', 'create_scene_scene1', 'source', 'verify', 'vtkh_data', 'pl1_0_vtkh_marchingcubes', 'pl1', 'plt1_scene1', 'add_plot_plt1_scene1', 'plt1_scene1_bounds', 'plt1_scene1_domain_ids', 'scene1_renders', 'exec_scene1']
-    selector = [0, 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max'] #, 'min', 'avg']
-    contourTimeList = ['create_scene_scene1', 'source', 'verify', 'vtkh_data', 'pl1_0_vtkh_marchingcubes']
-    renderTimeList = ['pl1', 'plt1_scene1', 'add_plot_plt1_scene1', 'plt1_scene1_bounds', 'plt1_scene1_domain_ids', 'scene1_renders', 'exec_scene1']
-##--
-
-##---- settings for loose coupling
-elif couplingType == 'loose' :
-    fields = ['appTime', 'source', 'ensure_blueprint_ADIOS']
+    fields = ['appTime',
+              ['contour', ['create_scene_scene1', 'source', 'verify', 'vtkh_data', 'pl1_0_vtkh_marchingcubes']],
+              ['render', ['pl1', 'plt1_scene1', 'add_plot_plt1_scene1', 'plt1_scene1_bounds', 'plt1_scene1_domain_ids', 'scene1_renders', 'exec_scene1']]]
     selector = [0, 'max', 'max']
-    contourTimeList = ['contour']
-    renderTimeList = ['render']
-##----
+    
+elif couplingType == 'loose' :
+    fields = ['appTime', 'contour', 'render', ['staging', ['source', 'ensure_blueprint_ADIOS','ADIOS']]]
+    selector = [0, 'max', 'max', 'max']    
 
-dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile)
+
+dumpSummaryAverages(stats, fields, selector, outputFile)
+dumpSummaryStats2(stats, fields, selector, outputFile)
+
+##dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile)
 
 outputFile.write('\n\n')
 outputFile.write('RawData\n')

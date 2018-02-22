@@ -129,7 +129,7 @@ private:
             for (int i = 0; i < d.size()-1; i++)
             {
                 T v = d[i];
-                if (!pointCentered && v > 0)
+                if (i > 0 && !pointCentered && v > 0)
                     v--;
                 str = str + std::to_string(v) + ",";
             }

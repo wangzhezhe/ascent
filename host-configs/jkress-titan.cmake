@@ -114,7 +114,7 @@ set(VTKM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/vtk-m/
 set(HDF5_DIR "/opt/cray/hdf5/1.10.0.3/gnu/4.9" CACHE PATH "")
 set(HDF5_INCLUDE_DIRS "/opt/cray/hdf5/1.10.0.3/gnu/4.9/include" CACHE PATH "")
 
-set(ADIOS_DIR "/sw/xk6/adios/1.12.0/cle5.2_gnu4.9.3" CACHE PATH "")
+set(ADIOS_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/ADIOS/install.xk6.gnu" CACHE PATH "")
 
 #SPHINX documentation building
 #set("SPHINX_EXECUTABLE" "/path/to/sphinx-build" CACHE PATH "")

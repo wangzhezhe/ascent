@@ -1,7 +1,7 @@
 import os, sys, glob
 
-if len(sys.argv) != 4 :
-    print 'usage: %s timing-file-pattern app-output-file output-file' % sys.argv[0]
+if len(sys.argv) != 5 :
+    print 'usage: %s timing-file-pattern app-output-file output-file tight/loose' % sys.argv[0]
     sys.exit(-1)
 
 inputFilePattern = sys.argv[1]
@@ -11,18 +11,25 @@ if len(timingFiles) == 0 :
     sys.exit(-1)
 
 
-def dumpSummaryStats(stats, fields, selector, outputFile) :
+def dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile) :
 
     outputFile.write('Cycle, Field, Value\n')
     for c in range(len(stats)) :         
         stat = stats[c]
         val = None
+        contourTime = 0
+        renderTime = 0
         for (f,s) in zip(fields,selector) :
             if type(s) is int :
                val = stat[f][s]
                sel = '[%d]' % s
             elif type(s) is str :
-               if s == 'max' :  val = max(stat[f])
+               if s == 'max' :  
+                   val = max(stat[f])
+                   if f in contourTimeList :
+                       contourTime = contourTime + val
+                   elif f in renderTimeList :
+                       renderTime = renderTime + val
                elif s == 'min' :  val = min(stat[f])
                elif s == 'avg' :  val = sum(stat[f]) / float(len(stat[f]))
                else : print 'Unkown selector ', s
@@ -33,6 +40,10 @@ def dumpSummaryStats(stats, fields, selector, outputFile) :
             if val != None :
                output = '%d, %s%s, %f' % (c,f,sel, val)
                outputFile.write('%s\n' % output)
+        output = '%d, Max_Contour, %f' % (c, contourTime)
+        outputFile.write('%s\n' % output)
+        output = '%d, Max_Render, %f' % (c, renderTime)
+        outputFile.write('%s\n' % output)
         outputFile.write('\n')
 
             
@@ -46,7 +57,8 @@ def dumpSummaryStats(stats, fields, selector, outputFile) :
 stats = []
 
 appOutputFile = sys.argv[2]
-outputFile = open(sys.argv[3], 'w')    
+outputFile = open(sys.argv[3], 'w') 
+couplingType = sys.argv[4]   
 
 ## Process application output file
 appLines = open(appOutputFile, 'r').readlines()
@@ -81,10 +93,23 @@ for tf in timingFiles :
 
 
 #Print summary stats:
-fields = ['appTime', 'ADIOS', 'ADIOS', 'ADIOS']
-selector = [0, 'max', 'min', 'avg']
+##---- settings for tight coupling
+if couplingType == 'tight' :
+    fields = ['appTime', 'create_scene_scene1', 'source', 'verify', 'vtkh_data', 'pl1_0_vtkh_marchingcubes', 'pl1', 'plt1_scene1', 'add_plot_plt1_scene1', 'plt1_scene1_bounds', 'plt1_scene1_domain_ids', 'scene1_renders', 'exec_scene1']
+    selector = [0, 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max', 'max'] #, 'min', 'avg']
+    contourTimeList = ['create_scene_scene1', 'source', 'verify', 'vtkh_data', 'pl1_0_vtkh_marchingcubes']
+    renderTimeList = ['pl1', 'plt1_scene1', 'add_plot_plt1_scene1', 'plt1_scene1_bounds', 'plt1_scene1_domain_ids', 'scene1_renders', 'exec_scene1']
+##--
 
-dumpSummaryStats(stats, fields, selector, outputFile)
+##---- settings for loose coupling
+elif couplingType == 'loose' :
+    fields = ['appTime']
+    selector = [0]
+    contourTimeList = []
+    renderTimeList = []
+##----
+
+dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile)
 
 outputFile.write('\n\n')
 outputFile.write('RawData\n')

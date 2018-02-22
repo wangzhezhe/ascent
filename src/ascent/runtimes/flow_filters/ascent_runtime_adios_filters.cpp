@@ -246,7 +246,7 @@ ADIOS::execute()
     {
         if (step == 0)
         {
-            int rc = adios_read_init_method(ADIOS_READ_METHOD_DATASPACES, mpi_comm, "verbose=4");
+            int rc = adios_read_init_method(ADIOS_READ_METHOD_DATASPACES, mpi_comm, "verbose=0");
             if (rc != 0)
                 ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
             
@@ -263,7 +263,7 @@ ADIOS::execute()
     {
         if (step == 0)
         {
-            int rc = adios_read_init_method(ADIOS_READ_METHOD_DIMES, mpi_comm, "verbose=4");
+            int rc = adios_read_init_method(ADIOS_READ_METHOD_DIMES, mpi_comm, "verbose=0");
             if (rc != 0)
                 ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
             

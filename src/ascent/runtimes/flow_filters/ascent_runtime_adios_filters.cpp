@@ -215,6 +215,7 @@ ADIOS::verify_params(const conduit::Node &params,
         info["errors"].append() = "missing required entry 'filename'";
         res = false;
     }
+
     
     return res;
 }
@@ -233,6 +234,23 @@ ADIOS::execute()
 
     transportType = params()["transport"].as_string();
     fileName      = params()["filename"].as_string();
+    vector<string> variables;
+    
+    if (params().has_child("variables"))
+    {
+        string str = params()["variables"].as_string();
+        stringstream ss(str);
+        string s;
+        while (ss >> s)
+        {
+            if (s.size() == 0)
+                continue;
+            if (s[s.size()-1] == ',')
+                s = s.substr(0, s.size()-1);
+            variables.push_back(s);
+            ss.ignore(1);
+        }
+    }
 
     const string groupName = "ascent";
     if (transportType == "file")
@@ -312,7 +330,17 @@ ADIOS::execute()
         {
             const Node& field = fields_itr.next();
             std::string field_name = fields_itr.name();
-            FieldVariable(field_name, field);
+            bool saveField = (variables.empty() ? true : false);
+            
+            for (auto &v : variables)
+                if (field_name == v)
+                {
+                    saveField = true;
+                    break;
+                }
+
+            if (saveField)
+                FieldVariable(field_name, field);
         }
     }
     

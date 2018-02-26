@@ -205,7 +205,7 @@ elif couplingType == 'loose' :
     selector = [0, 'max', 'max', 'max']    
 
 
-dumpSummaryAverages(stats, fields, selector, outputFile)
+dumpSummaryAverages(stats[2:], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)
 
 ##dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile)

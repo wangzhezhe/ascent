@@ -42,6 +42,7 @@
 # 
 ###############################################################################
 
+set(CMAKE_BUILD_TYPE "Release" CACHE PATH "")
 
 # c compiler
 set(CMAKE_C_COMPILER "/opt/cray/craype/2.5.13/bin/cc" CACHE PATH "")

@@ -15,6 +15,8 @@ if couplingType != 'noVis' :
   
 
 def GetValue(values, s) :
+    if len(values) == 0 : return -999999
+
     if type(s) is int :
         return values[s]
     elif type(s) is str :
@@ -39,15 +41,12 @@ def dumpSummaryAverages(stats, fields, selector, outputFile) :
             
     for c in range(len(stats)) :
         stat = stats[c]
-        print stat
         cTotal = []
         for (f,s) in zip(fields,selector) :
             values = []
             if type(f) is str :
                 statName = f
-                print f
-                print stat
-                values = stat[f]
+                if stat.has_key(f) : values = stat[f]
                 
             elif type(f) is list :
                 statName = f[0]
@@ -57,8 +56,11 @@ def dumpSummaryAverages(stats, fields, selector, outputFile) :
                     vi = stat[fi]
                     values = [sum(i) for i in zip(vi,values)]
 
-            value = GetValue(values, s)
-            cTotal.append(value)
+            if len(values) > 0 :
+               value = GetValue(values, s)
+               cTotal.append(value)
+            else : cTotal.append(cTotal[-1])
+
         mins = [min(i) for i in zip(mins, cTotal)]
         maxs = [max(i) for i in zip(maxs, cTotal)]
         total = [sum(i) for i in zip(total, cTotal)]
@@ -84,7 +86,7 @@ def dumpSummaryStats2(stats, fields, selector, outputFile) :
             values = []
             if type(f) is str :
                 statName = f
-                values = stat[f]
+                if stat.has_key(f) : values = stat[f]
                 
             elif type(f) is list :
                 statName = f[0]
@@ -94,12 +96,9 @@ def dumpSummaryStats2(stats, fields, selector, outputFile) :
                     vi = stat[fi]
                     values = [sum(i) for i in zip(vi,values)]
 
-#            print statName, values
             value = GetValue(values, s)
             outputFile.write('%d, %s, %f\n' % (c, statName, value))
         outputFile.write('\n')
-#            print statName, value
-#            print
 
 
 def dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile) :
@@ -160,8 +159,13 @@ for al in appLines :
        t1 = float(al.split()[2])
        appTime = (t1-t0) * 1000.0 ##convert to ms
        t0 = t1
-       cycle = cycle+1
        stats.append({'appTime' : [appTime]})
+
+    elif 'Visit time' in al :
+       visTime = float(al.split()[2]) * 1000.0 ##convert to ms
+       stats[cycle]['visTime'] = [visTime]
+       cycle = cycle+1
+
 
 if couplingType != 'noVis' :
     for tf in timingFiles :
@@ -199,17 +203,18 @@ if couplingType != 'noVis' :
 
 if couplingType == 'tight' :
     fields = ['appTime',
+              'visTime',
               ['contour', ['create_scene_scene1', 'source', 'verify', 'vtkh_data', 'pl1_0_vtkh_marchingcubes']],
               ['render', ['pl1', 'plt1_scene1', 'add_plot_plt1_scene1', 'plt1_scene1_bounds', 'plt1_scene1_domain_ids', 'scene1_renders', 'exec_scene1']]]
-    selector = [0, 'max', 'max']
+    selector = [0, 0, 'max', 'max']
     
 elif couplingType == 'loose' :
-    fields = ['appTime', 'contour', 'render', ['staging', ['source', 'ensure_blueprint_ADIOS','ADIOS']]]
-    selector = [0, 'max', 'max', 'max']    
+    fields = ['appTime', 'visTime', 'contour', 'render', ['staging', ['source', 'ensure_blueprint_ADIOS','ADIOS']]]
+    selector = [0, 0, 'max', 'max', 'max']
 
 else :
-    fields = ['appTime']
-    selector = [0]    
+    fields = ['appTime', 'visTime']
+    selector = [0, 0]
 
 dumpSummaryAverages(stats[2:], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)

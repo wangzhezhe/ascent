@@ -114,6 +114,8 @@ SUBROUTINE hydro
         WRITE(g_out,*) 'First step overhead', first_step-second_step
         WRITE(    0,*) 'Wall clock ', wall_clock
         WRITE(    0,*) 'First step overhead', first_step-second_step
+        WRITE(g_out,*) "Visit time ",time_visit
+        WRITE(0    ,*) "Visit time ",time_visit
       ENDIF
 
       IF ( .FALSE. ) THEN

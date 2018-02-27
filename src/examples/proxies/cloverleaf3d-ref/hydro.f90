@@ -37,7 +37,7 @@ SUBROUTINE hydro
 
   INTEGER         :: loc(1)
   REAL(KIND=8)    :: timer,timerstart,wall_clock,step_clock
-  
+  REAL(KIND=8)    :: timer_visit_start, time_visit
   REAL(KIND=8)    :: grind_time,cells,rstep
   REAL(KIND=8)    :: step_time,step_grind
   REAL(KIND=8)    :: first_step,second_step
@@ -86,7 +86,9 @@ SUBROUTINE hydro
       IF(MOD(step, summary_frequency).EQ.0) CALL field_summary()
     ENDIF
     IF(visit_frequency.NE.0) THEN
+      timer_visit_start = timer()
       IF(MOD(step, visit_frequency).EQ.0) CALL visit(my_ascent)
+      time_visit = timer() - timer_visit_start
     ENDIF
 
     ! Sometimes there can be a significant start up cost that appears in the first step.
@@ -189,6 +191,8 @@ SUBROUTINE hydro
       step_clock=timer()-step_time
       WRITE(g_out,*)"Wall clock ",wall_clock
       WRITE(0    ,*)"Wall clock ",wall_clock
+      WRITE(g_out,*)"Visit time ",time_visit
+      WRITE(0    ,*)"Visit time ",time_visit
       cells = grid%x_cells * grid%y_cells
       rstep = step
       grind_time   = wall_clock/(rstep * cells)

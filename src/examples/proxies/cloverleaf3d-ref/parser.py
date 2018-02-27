@@ -1,16 +1,18 @@
 import os, sys, glob
 
 if len(sys.argv) != 5 :
-    print 'usage: %s timing-file-pattern app-output-file output-file tight/loose' % sys.argv[0]
+    print 'usage: %s timing-file-pattern app-output-file output-file tight/loose/noVis' % sys.argv[0]
     sys.exit(-1)
 
 inputFilePattern = sys.argv[1]
 timingFiles = glob.glob('%s' % inputFilePattern)
-if len(timingFiles) == 0 :
-    print 'Error. No input files found'
-    sys.exit(-1)
-couplingType = sys.argv[4]   
+couplingType = sys.argv[4] 
 
+if couplingType != 'noVis' :
+    if len(timingFiles) == 0 :
+        print 'Error. No input files found'
+        sys.exit(-1)
+  
 
 def GetValue(values, s) :
     if type(s) is int :
@@ -161,38 +163,39 @@ for al in appLines :
        cycle = cycle+1
        stats.append({'appTime' : [appTime]})
 
-for tf in timingFiles :
-    inputLines = open(tf, 'r').readlines()
-    lastCycle = -1
-    for l in inputLines :
-        if 'VISapp_' in l :
-            data = l.split(',')
-            cycle = int(data[0])
-            rank = int(data[1].split('_')[1])
-            nRanks = int(data[1].split('_')[2])
-            operation = data[2].strip()
-            timeMS = float(data[3])            
-            if cycle >= len(stats) :
-               print 'cycle overrun...', cycle, len(stats)
-               continue
-            if not stats[cycle].has_key(operation) :
-               stats[cycle][operation] = []
-            stats[cycle][operation].append(timeMS)
+if couplingType != 'noVis' :
+    for tf in timingFiles :
+        inputLines = open(tf, 'r').readlines()
+        lastCycle = -1
+        for l in inputLines :
+            if 'VISapp_' in l :
+                data = l.split(',')
+                cycle = int(data[0])
+                rank = int(data[1].split('_')[1])
+                nRanks = int(data[1].split('_')[2])
+                operation = data[2].strip()
+                timeMS = float(data[3])            
+                if cycle >= len(stats) :
+                   print 'cycle overrun...', cycle, len(stats)
+                   continue
+                if not stats[cycle].has_key(operation) :
+                   stats[cycle][operation] = []
+                stats[cycle][operation].append(timeMS)
 
-        elif 'FLOWfilter' in l :
-            data = l.split(',')
-            cycle = int(data[0])
-            rank = int(data[1].split('_')[1])
-            nRanks = int(data[1].split('_')[2])
-            operation = data[2].strip()
-            timeMS = float(data[3])
-            if cycle >= len(stats) :
-               print 'cycle overrun...', cycle, len(stats)
-               continue
+            elif 'FLOWfilter' in l :
+                data = l.split(',')
+                cycle = int(data[0])
+                rank = int(data[1].split('_')[1])
+                nRanks = int(data[1].split('_')[2])
+                operation = data[2].strip()
+                timeMS = float(data[3])
+                if cycle >= len(stats) :
+                   print 'cycle overrun...', cycle, len(stats)
+                   continue
 
-            if not stats[cycle].has_key(operation) :
-               stats[cycle][operation] = []
-            stats[cycle][operation].append(timeMS)
+                if not stats[cycle].has_key(operation) :
+                   stats[cycle][operation] = []
+                stats[cycle][operation].append(timeMS)
 
 if couplingType == 'tight' :
     fields = ['appTime',
@@ -204,6 +207,9 @@ elif couplingType == 'loose' :
     fields = ['appTime', 'contour', 'render', ['staging', ['source', 'ensure_blueprint_ADIOS','ADIOS']]]
     selector = [0, 'max', 'max', 'max']    
 
+else :
+    fields = ['appTime']
+    selector = [0]    
 
 dumpSummaryAverages(stats[2:], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)

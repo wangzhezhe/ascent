@@ -319,6 +319,10 @@ AscentRuntime::ConvertToFlowGraph(const conduit::Node &pipeline,
         filter_name = "vtkh_3slice";
         needs_params = false;
       }
+      else if(type == "pointaverage")
+      {
+        filter_name = "vtkh_pointaverage";
+      }
       else
       {
         ASCENT_ERROR("Unrecognized filter "<<filter["type"].as_string());

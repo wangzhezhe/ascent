@@ -126,6 +126,19 @@ public:
                                  conduit::Node &info);
     virtual void   execute();
 };
+    
+//-----------------------------------------------------------------------------
+class VTKHPointAverage : public ::flow::Filter
+{
+public:
+    VTKHPointAverage();
+    virtual ~VTKHPointAverage();
+    
+    virtual void   declare_interface(conduit::Node &i);
+    virtual bool   verify_params(const conduit::Node &params,
+                                 conduit::Node &info);
+    virtual void   execute();
+};    
 
 //-----------------------------------------------------------------------------
 class VTKHSlice : public ::flow::Filter

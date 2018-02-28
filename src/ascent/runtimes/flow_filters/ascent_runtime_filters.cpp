@@ -124,6 +124,7 @@ register_builtin()
     Workspace::register_filter_type<VTKHThreshold>();
     Workspace::register_filter_type<VTKHSlice>();
     Workspace::register_filter_type<VTKH3Slice>();
+    Workspace::register_filter_type<VTKHPointAverage>();
 
     Workspace::register_filter_type<AddPlot>();
     Workspace::register_filter_type<CreatePlot>();

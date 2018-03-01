@@ -350,6 +350,7 @@ Workspace::execute()
             auto endT = std::chrono::steady_clock::now();
             auto diff = endT - startT;
             auto dt = std::chrono::duration<double, std::milli>(diff).count();
+            /*
             if (timingInfo == NULL)
             {
                 timingInfo = new ofstream;
@@ -358,8 +359,9 @@ Workspace::execute()
                 timingInfo->open(nm, ofstream::out);
             }
             (*timingInfo)<<cnt<<", FLOWfilter_"<<rank<<"_"<<nRanks<<", "<<f->name()<<", "<<dt<<endl;
+            */
             
-            cout<<cnt<<", FLOWfilter_"<<rank<<"_"<<nRanks<<", "<<f->name()<<", "<<dt<<endl;
+//            cout<<cnt<<", FLOWfilter_"<<rank<<"_"<<nRanks<<", "<<f->name()<<", "<<dt<<endl;
 //            cout << "FLOW filter (" << rank << "/"<< nRanks << ") -> " << f->name() << " <- wall time = "  
 //               << std::chrono::duration<double, std::milli>(diff).count() << " ms\n" << endl;
 

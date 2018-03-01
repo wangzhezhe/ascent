@@ -82,8 +82,10 @@
 #include <vtkm/cont/DataSet.h>
 
 #include <ascent_vtkh_data_adapter.hpp>
-
 #endif
+
+#include <chrono>
+#include <sys/time.h>
 
 using namespace conduit;
 using namespace std;
@@ -654,6 +656,26 @@ std::map<std::string, CinemaManager> CinemaDatabases::m_databases;
 // -- end namespace detail --
 //-----------------------------------------------------------------------------
 
+static std::ofstream *timingInfo = NULL;    
+void RecordTime(const std::string &nm, double time)
+{
+    int rank = 0;
+#ifdef ASCENT_MPI_ENABLED
+    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+    MPI_Comm_rank(mpi_comm, &rank);
+#endif
+    
+    if (timingInfo == NULL)
+    {
+        timingInfo = new ofstream;
+        char nm[32];
+        sprintf(nm, "timing.%d.out", rank);
+        timingInfo->open(nm, ofstream::out);
+    }
+    (*timingInfo)<<"ASCENT_"<<nm<<"_"<<rank<<" "<<time<<endl;
+    //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
+}
+
 //-----------------------------------------------------------------------------
 EnsureVTKH::EnsureVTKH()
 :Filter()
@@ -835,7 +857,8 @@ VTKHMarchingCubes::verify_params(const conduit::Node &params,
 void 
 VTKHMarchingCubes::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     ASCENT_INFO("Marching the cubes!");
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -871,6 +894,8 @@ VTKHMarchingCubes::execute()
     vtkh::DataSet *iso_output = marcher.GetOutput();
     
     set_output<vtkh::DataSet>(iso_output);
+
+    RecordTime("ContourFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -920,7 +945,8 @@ VTKHPointAverage::verify_params(const conduit::Node &params,
 void 
 VTKHPointAverage::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+     
     ASCENT_INFO("Point Average Filter");
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -940,6 +966,8 @@ VTKHPointAverage::execute()
     avg.Update();
     vtkh::DataSet *avg_output = avg.GetOutput();
     set_output<vtkh::DataSet>(avg_output);
+
+    RecordTime("PointAverageFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1914,6 +1942,8 @@ CreatePlot::verify_params(const conduit::Node &params,
 void 
 CreatePlot::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("create_plot input must be a vtk-h dataset");
@@ -2010,7 +2040,8 @@ CreatePlot::execute()
                                                                          &graph().workspace().registry(), 
                                                                          renderer);
     set_output<detail::RendererContainer>(container);
-
+    
+    RecordTime("RenderPlot", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 

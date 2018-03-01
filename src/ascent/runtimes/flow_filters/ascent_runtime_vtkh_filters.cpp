@@ -76,6 +76,7 @@
 #include <vtkh/rendering/VolumeRenderer.hpp>
 #include <vtkh/filters/Clip.hpp>
 #include <vtkh/filters/MarchingCubes.hpp>
+#include <vtkh/filters/PointAverage.hpp>
 #include <vtkh/filters/Slice.hpp>
 #include <vtkh/filters/Threshold.hpp>
 #include <vtkm/cont/DataSet.h>
@@ -870,6 +871,75 @@ VTKHMarchingCubes::execute()
     vtkh::DataSet *iso_output = marcher.GetOutput();
     
     set_output<vtkh::DataSet>(iso_output);
+}
+
+
+//-----------------------------------------------------------------------------
+VTKHPointAverage::VTKHPointAverage()
+:Filter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHPointAverage::~VTKHPointAverage()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+void 
+VTKHPointAverage::declare_interface(Node &i)
+{
+    i["type_name"]   = "vtkh_pointaverage";
+    i["port_names"].append() = "in";
+    i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool
+VTKHPointAverage::verify_params(const conduit::Node &params,
+                                 conduit::Node &info)
+{
+    info.reset();
+    bool res = true;
+    
+    if(! params.has_child("field") || 
+       ! params["field"].dtype().is_string() ||
+       ! params.has_child("outputfield") ||
+       ! params["outputfield"].dtype().is_string())
+    {
+        info["errors"].append() = "Missing required string parameter 'field'";
+        res = false;
+    }
+    
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+void 
+VTKHPointAverage::execute()
+{
+
+    ASCENT_INFO("Point Average Filter");
+    if(!input(0).check_type<vtkh::DataSet>())
+    {
+        ASCENT_ERROR("vtkh_pointaverage input must be a vtk-h dataset");
+    }
+
+    std::string field_name = params()["field"].as_string();
+    std::string output_field_name = params()["outputfield"].as_string();
+    
+    vtkh::DataSet *data = input<vtkh::DataSet>(0);
+    vtkh::PointAverage avg;
+
+    avg.SetInput(data);
+    avg.SetField(field_name);
+    avg.SetOutputField(output_field_name);
+
+    avg.Update();
+    vtkh::DataSet *avg_output = avg.GetOutput();
+    set_output<vtkh::DataSet>(avg_output);
 }
 
 //-----------------------------------------------------------------------------

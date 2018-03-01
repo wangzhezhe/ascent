@@ -44,8 +44,6 @@ def dumpSummaryAverages(stats, fields, selector, outputFile) :
     for c in range(len(stats)) :
         stat = stats[c]
         cTotal = []
-        print 'appTime:', stat['appTime']
-        print 'visTime:', stat['visTime']
         for (f,s) in zip(fields,selector) :
             values = []
             if type(f) is str :
@@ -68,7 +66,6 @@ def dumpSummaryAverages(stats, fields, selector, outputFile) :
         mins = [min(i) for i in zip(mins, cTotal)]
         maxs = [max(i) for i in zip(maxs, cTotal)]
         total = [sum(i) for i in zip(total, cTotal)]
-        print '     Total', total
 
     ##Averages:
     avg = []
@@ -251,12 +248,6 @@ for tf in timingFiles :
                 lastCycle = cycle
             
         outputFile.write('%d, %d, %d, %s, %f\n' % (cycle, rank, nRanks, operation, timeS))
-
-
-print '\n\n\n\n\n'
-
-
-
 
 
 outputFile.close()

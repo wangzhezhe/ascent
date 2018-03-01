@@ -1,5 +1,7 @@
 import os, sys, glob
 
+SKIP = 2
+
 if len(sys.argv) != 5 :
     print 'usage: %s timing-file-pattern app-output-file output-file tight/loose/noVis' % sys.argv[0]
     sys.exit(-1)
@@ -42,6 +44,8 @@ def dumpSummaryAverages(stats, fields, selector, outputFile) :
     for c in range(len(stats)) :
         stat = stats[c]
         cTotal = []
+        print 'appTime:', stat['appTime']
+        print 'visTime:', stat['visTime']
         for (f,s) in zip(fields,selector) :
             values = []
             if type(f) is str :
@@ -64,14 +68,15 @@ def dumpSummaryAverages(stats, fields, selector, outputFile) :
         mins = [min(i) for i in zip(mins, cTotal)]
         maxs = [max(i) for i in zip(maxs, cTotal)]
         total = [sum(i) for i in zip(total, cTotal)]
+        print '     Total', total
 
     ##Averages:
     avg = []
     for t in total :
         avg.append(t/float(len(stats)))
-    outputFile.write('Field, Avg, Min, Max\n')
-    for (l,a, vm, vM) in zip(labels, avg, mins, maxs) :
-        outputFile.write('%s, %f, %f, %f\n' % (l, a, vm, vM))
+    outputFile.write('Field, Total, Avg, Min, Max\n')
+    for (l,t,a, vm, vM) in zip(labels, total, avg, mins, maxs) :
+        outputFile.write('%s, %f, %f, %f, %f\n' % (l, t, a, vm, vM))
     outputFile.write('\n\n')
         
 
@@ -154,18 +159,21 @@ outputFile = open(sys.argv[3], 'w')
 appLines = open(appOutputFile, 'r').readlines()
 t0 = 0.0
 cycle = 0
-for al in appLines :
-    if 'Wall clock' in al :
-       t1 = float(al.split()[2])
-       appTime = (t1-t0) * 1000.0 ##convert to ms
-       t0 = t1
-       stats.append({'appTime' : [appTime]})
 
-    elif 'Visit time' in al :
-       visTime = float(al.split()[2]) * 1000.0 ##convert to ms
-       stats[cycle]['visTime'] = [visTime]
-       cycle = cycle+1
 
+appTimes = []
+visTimes = []
+t0 = 0.0
+for l in appLines :
+    if 'Wall clock' in l :
+        t1 = float(l.split()[2])
+        appTimes.append(t1-t0)        
+        t0 = t1
+    elif 'Visit time' in l :
+        visTimes.append(float(l.split()[2]))
+
+for (a,v) in zip(appTimes, visTimes) :
+    stats.append({'appTime' : [a], 'visTime' : [v]})
 
 if couplingType != 'noVis' :
     for tf in timingFiles :
@@ -184,7 +192,8 @@ if couplingType != 'noVis' :
                    continue
                 if not stats[cycle].has_key(operation) :
                    stats[cycle][operation] = []
-                stats[cycle][operation].append(timeMS)
+                timeS = timeMS/1000.0
+                stats[cycle][operation].append(timeS)
 
             elif 'FLOWfilter' in l :
                 data = l.split(',')
@@ -199,7 +208,8 @@ if couplingType != 'noVis' :
 
                 if not stats[cycle].has_key(operation) :
                    stats[cycle][operation] = []
-                stats[cycle][operation].append(timeMS)
+                timeS = timeMS / 1000.0
+                stats[cycle][operation].append(timeS)
 
 if couplingType == 'tight' :
     fields = ['appTime',
@@ -216,14 +226,14 @@ else :
     fields = ['appTime', 'visTime']
     selector = [0, 0]
 
-dumpSummaryAverages(stats[2:], fields, selector, outputFile)
+dumpSummaryAverages(stats[SKIP:], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)
 
 ##dumpSummaryStats(stats, fields, selector, contourTimeList, renderTimeList, outputFile)
 
 outputFile.write('\n\n')
 outputFile.write('RawData\n')
-outputFile.write('Cycle, rank, numRanks, operation, time (ms)\n')
+outputFile.write('Cycle, rank, numRanks, operation, time (s)\n')
 for tf in timingFiles :
     inputLines = open(tf, 'r').readlines()
     lastCycle = -1
@@ -235,11 +245,16 @@ for tf in timingFiles :
             nRanks = int(data[1].split('_')[2])
             operation = data[2]
             timeMS = float(data[3])
+            timeS = timeMS / 1000.0
             if cycle > 0 and cycle != lastCycle :
                 outputFile.write('\n')
                 lastCycle = cycle
             
-        outputFile.write('%d, %d, %d, %s, %f\n' % (cycle, rank, nRanks, operation, timeMS))
+        outputFile.write('%d, %d, %d, %s, %f\n' % (cycle, rank, nRanks, operation, timeS))
+
+
+print '\n\n\n\n\n'
+
 
 
 

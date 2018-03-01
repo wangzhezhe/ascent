@@ -659,10 +659,11 @@ std::map<std::string, CinemaManager> CinemaDatabases::m_databases;
 static std::ofstream *timingInfo = NULL;    
 void RecordTime(const std::string &nm, double time)
 {
-    int rank = 0;
+    int rank = 0, numRanks = 0;
 #ifdef ASCENT_MPI_ENABLED
     MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
     MPI_Comm_rank(mpi_comm, &rank);
+    MPI_Comm_size(mpi_comm, &numRanks);
 #endif
     
     if (timingInfo == NULL)
@@ -672,7 +673,7 @@ void RecordTime(const std::string &nm, double time)
         sprintf(nm, "timing.%d.out", rank);
         timingInfo->open(nm, ofstream::out);
     }
-    (*timingInfo)<<"ASCENT_"<<nm<<"_"<<rank<<" "<<time<<endl;
+    (*timingInfo)<<"ASCENT_"<<nm<<"_"<<rank<<"_"<<numRanks<<" "<<time<<endl;
     //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
 }
 
@@ -1317,7 +1318,7 @@ DefaultRender::verify_params(const conduit::Node &params,
 void 
 DefaultRender::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
     ASCENT_INFO("We be default rendering!");
     
     if(!input(0).check_type<vtkm::Bounds>())
@@ -1420,6 +1421,7 @@ DefaultRender::execute()
       renders->push_back(render); 
     }
     set_output<std::vector<vtkh::Render>>(renders);
+    RecordTime("DefaultRender", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());        
 }
 
 //-----------------------------------------------------------------------------
@@ -1580,6 +1582,7 @@ VTKHBounds::declare_interface(Node &i)
 void 
 VTKHBounds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();    
     ASCENT_INFO("VTK-h bounds");
     vtkm::Bounds *bounds = new vtkm::Bounds;
     
@@ -1591,6 +1594,7 @@ VTKHBounds::execute()
     vtkh::DataSet *data = input<vtkh::DataSet>(0);
     bounds->Include(data->GetGlobalBounds());
     set_output<vtkm::Bounds>(bounds);
+    RecordTime("Bounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 
@@ -1622,6 +1626,7 @@ VTKHUnionBounds::declare_interface(Node &i)
 void 
 VTKHUnionBounds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();    
     if(!input(0).check_type<vtkm::Bounds>())
     {
         ASCENT_ERROR("'a' must be a vtkm::Bounds * instance");
@@ -1640,6 +1645,7 @@ VTKHUnionBounds::execute()
     result->Include(*bounds_a);
     result->Include(*bounds_b);
     set_output<vtkm::Bounds>(result);
+    RecordTime("UnionBounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());            
 }
 
 
@@ -1671,6 +1677,7 @@ VTKHDomainIds::declare_interface(Node &i)
 void 
 VTKHDomainIds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();    
     ASCENT_INFO("VTK-h domain_ids");
     
     if(!input(0).check_type<vtkh::DataSet>())
@@ -1686,6 +1693,7 @@ VTKHDomainIds::execute()
     result->insert(domain_ids.begin(), domain_ids.end());
 
     set_output<std::set<vtkm::Id> >(result);
+    RecordTime("DomainIDs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());        
 }
 
 
@@ -1717,6 +1725,7 @@ VTKHUnionDomainIds::declare_interface(Node &i)
 void 
 VTKHUnionDomainIds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();    
     if(!input(0).check_type<std::set<vtkm::Id> >())
     {
         ASCENT_ERROR("'a' must be a std::set<vtkm::Id> * instance");
@@ -1737,6 +1746,8 @@ VTKHUnionDomainIds::execute()
     result->insert(dids_b->begin(), dids_b->end());
     
     set_output<std::set<vtkm::Id>>(result);
+
+    RecordTime("UnionIDs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 //-----------------------------------------------------------------------------

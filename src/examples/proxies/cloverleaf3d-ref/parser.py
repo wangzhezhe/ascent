@@ -211,8 +211,8 @@ if couplingType != 'noVis' :
 if couplingType == 'tight' :
     fields = ['appTime',
               'visTime',
-              ['contour', ['create_scene_scene1', 'source', 'verify', 'vtkh_data', 'pl1_0_vtkh_marchingcubes']],
-              ['render', ['pl1', 'plt1_scene1', 'add_plot_plt1_scene1', 'plt1_scene1_bounds', 'plt1_scene1_domain_ids', 'scene1_renders', 'exec_scene1']]]
+              ['contour', ['create_scene_iso_render', 'source', 'verify', 'vtkh_data', 'my_2_filter_pipeline_0_vtkh_pointaverage', 'my_2_filter_pipeline_1_vtkh_marchingcubes', 'my_2_filter_pipeline']],
+              ['render', ['plt1_iso_render', 'add_plot_plt1_iso_render', 'plt1_iso_render_bounds', 'plt1_iso_render_domain_ids', 'iso_render_renders', 'exec_iso_render']]]
     selector = [0, 0, 'max', 'max']
     
 elif couplingType == 'loose' :

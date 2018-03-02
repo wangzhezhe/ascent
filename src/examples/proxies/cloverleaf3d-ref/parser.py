@@ -244,7 +244,8 @@ print len(stats)
 #print stats[0]
 #print stats[1]
 if couplingType == 'tight' :
-    fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', ['Render', ['RenderPlot', 'Bounds', 'DomainIDs', 'DefaultRender']]]
+#    fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', ['Render', ['RenderPlot', 'Bounds', 'DomainIDs', 'DefaultRender']]]
+    fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', 'ExecScene']
     selector = [0, 0, 'max', 'max', 'max']
 elif couplingType == 'loose' :
     fields = ['appTime', 'visTime', 'contour', 'render']

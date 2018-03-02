@@ -1798,6 +1798,7 @@ DefaultScene::declare_interface(Node &i)
 void 
 DefaultScene::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
     ASCENT_INFO("Creating a scene default renderer!");
     
     // inputs are bounds and set of domains
@@ -1837,6 +1838,7 @@ DefaultScene::execute()
     renderer->SetField(field_name);
     scene.AddRenderer(cont);
     scene.Execute(renders);
+    RecordTime("DefaultSceneExecute", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 //-----------------------------------------------------------------------------
@@ -2109,6 +2111,7 @@ ExecScene::declare_interface(conduit::Node &i)
 void 
 ExecScene::execute()
 {
+    auto startT = std::chrono::steady_clock::now();        
     if(!input(0).check_type<detail::AscentScene>())
     {
         ASCENT_ERROR("'scene' must be a AscentScene * instance");
@@ -2122,6 +2125,7 @@ ExecScene::execute()
     detail::AscentScene *scene = input<detail::AscentScene>(0);
     std::vector<vtkh::Render> * renders = input<std::vector<vtkh::Render>>(1);
     scene->Execute(*renders);
+    RecordTime("ExecScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------

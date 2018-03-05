@@ -98,6 +98,11 @@ SUBROUTINE hydro
     IF(step.EQ.1) first_step=(timer() - step_time)
     IF(step.EQ.2) second_step=(timer() - step_time)
 
+    IF ((wait_time - (timer() - step_time)).GT.0) THEN
+        WRITE(    0,*) 'Sleeping cloverleaf for ', (wait_time - (timer() - step_time))
+        call sleep(int(wait_time - (timer() - step_time)))
+    END IF
+    
     IF(time+g_small.GT.end_time.OR.step.GE.end_step) THEN
 
       complete=.TRUE.
@@ -205,6 +210,5 @@ SUBROUTINE hydro
       WRITE(g_out,*)"Step time per cell    ",step_grind
 
      END IF
-
   END DO
 END SUBROUTINE hydro

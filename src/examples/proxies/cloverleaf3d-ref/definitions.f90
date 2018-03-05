@@ -118,6 +118,8 @@ MODULE definitions_module
                   ,dtw            &
                   ,dtdiv
 
+   INTEGER      :: wait_time
+
    INTEGER      :: visit_frequency   &
                   ,summary_frequency
 

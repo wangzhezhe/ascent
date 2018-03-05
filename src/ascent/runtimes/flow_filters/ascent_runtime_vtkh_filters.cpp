@@ -890,6 +890,7 @@ VTKHMarchingCubes::execute()
       marcher.SetLevels(params()["levels"].to_int32());
     }
 
+    marcher.AddMapField("pressure");
     marcher.Update();
 
     vtkh::DataSet *iso_output = marcher.GetOutput();

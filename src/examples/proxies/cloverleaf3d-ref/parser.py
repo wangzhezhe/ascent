@@ -248,12 +248,12 @@ if couplingType == 'tight' :
     selector = [0, 0, 'max', 'max', 'max']
 elif couplingType == 'loose' :
     fields = ['appTime', 'visTime', 'point_average', 'contour', 'render']
-    selector = [0, 0, 'avg', 'avg']
+    selector = [0, 0, 'max', 'max', 'max']
 else :
     fields = ['appTime', 'visTime']
     selector = [0, 0]
 
-dumpSummaryAverages(stats[SKIP:], fields, selector, outputFile)
+dumpSummaryAverages(stats[SKIP:len(stats)-1], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)
 dumpRawData(stats, outputFile)
 

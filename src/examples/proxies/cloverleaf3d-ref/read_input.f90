@@ -55,6 +55,7 @@ SUBROUTINE read_input()
   complete=.FALSE.
 
   visit_frequency=0
+  wait_time=0
   summary_frequency=10
 
   dtinit=0.1_8
@@ -167,6 +168,9 @@ SUBROUTINE read_input()
       CASE('z_cells')
         grid%z_cells=parse_getival(parse_getword(.TRUE.))
         IF(parallel%boss)WRITE(g_out,"(1x,a25,i12)")'z_cells',grid%z_cells
+      CASE('wait_time')
+        wait_time=parse_getival(parse_getword(.TRUE.))
+        IF(parallel%boss)WRITE(g_out,"(1x,a25,i12)")'wait_time',wait_time
       CASE('visit_frequency')
         visit_frequency=parse_getival(parse_getword(.TRUE.))
         IF(parallel%boss)WRITE(g_out,"(1x,a25,i12)")'visit_frequency',visit_frequency

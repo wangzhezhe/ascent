@@ -247,7 +247,7 @@ if couplingType == 'tight' :
     fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', 'ExecScene']
     selector = [0, 0, 'max', 'max', 'max']
 elif couplingType == 'loose' :
-    fields = ['appTime', 'visTime', 'contour', 'render']
+    fields = ['appTime', 'visTime', 'point_average', 'contour', 'render']
     selector = [0, 0, 'avg', 'avg']
 else :
     fields = ['appTime', 'visTime']

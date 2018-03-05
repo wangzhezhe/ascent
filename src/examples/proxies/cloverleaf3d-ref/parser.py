@@ -98,7 +98,7 @@ def dumpSummaryStats2(stats, fields, selector, outputFile) :
                     vi = stat[fi]
                     values = [sum(i) for i in zip(vi,values)]
             value = GetValue(values, s)
-#            print statName, values, '-->', value
+#            print c, statName, values, '-->', value
             outputFile.write('%d, %s, %f\n' % (c, statName, value))
         outputFile.write('\n')
 
@@ -149,7 +149,6 @@ def dumpRawData(stats, outputFile) :
         stat = stats[c]
         for k in stat.keys() :
             val = stat[k]
-            if len(val) == 1 : continue
             for i in range(len(val)) :
                 rank = i
                 nRanks = len(val)
@@ -185,14 +184,14 @@ def ParseVisService(tf, stats) :
         rank = int(data[1].split('_')[1])
         nRanks = int(data[1].split('_')[2])
         operation = data[2].strip()
-        timeMS = float(data[3])            
+        timeMS = float(data[3])
         if cycle >= len(stats) :
             print 'cycle overrun...', cycle, len(stats)
             continue
         if not stats[cycle].has_key(operation) :
             stats[cycle][operation] = []
-            timeS = timeMS/1000.0
-            stats[cycle][operation].append(timeS)
+        timeS = timeMS/1000.0
+        stats[cycle][operation].append(timeS)
 
     return stats
 

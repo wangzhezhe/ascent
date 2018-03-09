@@ -294,6 +294,23 @@ ADIOS::execute()
         //adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
         adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
     }
+   else if (transportType == "flexpath")
+    {
+        if (step == 0)
+        {
+            int rc = adios_read_init_method(ADIOS_READ_METHOD_FLEXPATH, mpi_comm, "verbose=0");
+            if (rc != 0)
+                ASCENT_ERROR("ADIOS Error: "<<adios_errmsg());
+            
+            adios_init_noxml(mpi_comm);
+            adios_declare_group(&adiosGroup, groupName.c_str(), "", adios_stat_default);
+            adios_select_method(adiosGroup, "FLEXPATH", "", "");
+            adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
+        }
+        
+        //adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), (step==0?"w":"a"), mpi_comm);
+        adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
+    }
 
     else
         ASCENT_ERROR("Unsupported transport type");

@@ -85,6 +85,12 @@ SUBROUTINE hydro
     IF(summary_frequency.NE.0) THEN
       IF(MOD(step, summary_frequency).EQ.0) CALL field_summary()
     ENDIF
+
+    IF ((wait_time - (timer() - step_time)).GT.0) THEN
+        WRITE(    0,*) 'Sleeping cloverleaf for ', (wait_time - (timer() - step_time))
+        call sleep(int(wait_time - (timer() - step_time)))
+    END IF
+
     IF(visit_frequency.NE.0) THEN
       timer_visit_start = timer()
       IF(MOD(step, visit_frequency).EQ.0) CALL visit(my_ascent)
@@ -97,11 +103,6 @@ SUBROUTINE hydro
     !  in recorded run times.
     IF(step.EQ.1) first_step=(timer() - step_time)
     IF(step.EQ.2) second_step=(timer() - step_time)
-
-    IF ((wait_time - (timer() - step_time)).GT.0) THEN
-        WRITE(    0,*) 'Sleeping cloverleaf for ', (wait_time - (timer() - step_time))
-        call sleep(int(wait_time - (timer() - step_time)))
-    END IF
     
     IF(time+g_small.GT.end_time.OR.step.GE.end_step) THEN
 

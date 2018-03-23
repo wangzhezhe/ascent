@@ -57,7 +57,7 @@ set(ENABLE_FORTRAN ON CACHE PATH "")
 set(CMAKE_Fortran_COMPILER  "/opt/cray/craype/2.5.13/bin/ftn" CACHE PATH "")
 
 # OPENMP (optional: for proxy apps)
-set(ENABLE_OPENMP OFF CACHE PATH "")
+set(ENABLE_OPENMP ON CACHE PATH "")
 
 # MPI Support
 set(ENABLE_MPI  ON CACHE PATH "")
@@ -88,16 +88,16 @@ set(ENABLE_CUDA OFF CACHE PATH "")
 
 
 # conduit 
-set(ASCENT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/ascent/install-release" CACHE PATH "")
+set(ASCENT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/serialBuild/ascent/install-release" CACHE PATH "")
 
 # conduit 
-set(CONDUIT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/conduit/install" CACHE PATH "")
+set(CONDUIT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/serialBuild/conduit/install" CACHE PATH "")
 
 # icet 
 set(ICET_DIR "/disk2TB/proj/alpine/icet/install" CACHE PATH "")
 
 #vtk-h
-set(VTKH_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/vtk-h/install" CACHE PATH "")
+set(VTKH_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/serialBuild/vtk-h/install" CACHE PATH "")
 
 #
 # vtkm
@@ -108,7 +108,7 @@ set(ASCENT_VTKM_USE_TBB OFF CACHE PATH "")
 #set(TBB_DIR "/usr/include" CACHE PATH "")
 
 # vtkm
-set(VTKM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/vtk-m/install" CACHE PATH "")
+set(VTKM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/serialBuild/vtk-m/install" CACHE PATH "")
 
 # HDF5 support (optional)
 # hdf5

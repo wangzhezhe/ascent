@@ -2,14 +2,14 @@ import os, sys, glob
 
 SKIP = 2
 
-if len(sys.argv) != 5 :
-    print 'usage: %s timing-file-pattern app-output-file output-file tight/loose/noVis' % sys.argv[0]
+if len(sys.argv) != 6 :
+    print 'usage: %s timing-file-pattern app-output-file output-file tight/loose/noVis numSteps' % sys.argv[0]
     sys.exit(-1)
 
 inputFilePattern = sys.argv[1]
 timingFiles = glob.glob('%s' % inputFilePattern)
 couplingType = sys.argv[4]
-
+ENDSKIP = int(sys.argv[5])
 
 if couplingType != 'noVis' :
     if len(timingFiles) == 0 :
@@ -186,7 +186,7 @@ def ParseVisService(tf, stats) :
         operation = data[2].strip()
         timeMS = float(data[3])
         if cycle >= len(stats) :
-            print 'cycle overrun...', cycle, len(stats)
+            #print 'cycle overrun...', cycle, len(stats)
             continue
         if not stats[cycle].has_key(operation) :
             stats[cycle][operation] = []
@@ -253,7 +253,7 @@ else :
     fields = ['appTime', 'visTime']
     selector = [0, 0]
 
-dumpSummaryAverages(stats[SKIP:len(stats)-1], fields, selector, outputFile)
+dumpSummaryAverages(stats[SKIP:ENDSKIP], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)
 dumpRawData(stats, outputFile)
 

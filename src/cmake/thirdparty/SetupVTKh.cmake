@@ -62,7 +62,7 @@ blt_register_library(NAME vtkh
 
 if (MPI_FOUND)
     blt_register_library(NAME vtkh_par
-                         DEFINES "-DPARALLEL"
+                         DEFINES "-DPARALLEL -DUSE_READ_OMP -DVTKH_USE_OPENMP"
                          INCLUDES ${VTKh_INCLUDE_DIRS}
                          LIBRARIES vtkh_par)
 

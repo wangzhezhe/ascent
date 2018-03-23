@@ -1,4 +1,6 @@
 import os, sys, glob
+#import numpy
+#import matplotlib.pyplot as plt
 
 SKIP = 2
 
@@ -226,6 +228,77 @@ def ParseVisFiles(timingFiles, stats) :
             stats = ParseInsituVis(tf, stats)
     return stats
 
+def dumpArray(x, fname) :
+    print fname, min(x), max(x), 'Total= ', sum(x)
+    
+    f = open(fname, 'w')
+    f.write('%s\n' % fname)
+    for i in x :
+        f.write('%f\n' % i)
+    f.close()
+
+def dumpHistogramsAtStep(stats, fields, outputFileName, couplingType) :
+    appTime = stats['appTime'][0]
+    visTime = stats['visTime'][0]
+#    print appTime, visTime
+#    print stats.keys()
+    
+    N = len(stats[fields[2]])
+    data = []
+    indy500 = [0.0]*N
+    total = [0.0]*N
+    idle = [0.0]*N
+    busy = [visTime]*N
+    for f in fields[2:] :
+        x = stats[f]
+        data.append(x)
+        for i in range(N) : total[i] = total[i] + x[i]
+
+    maxTotal = max(total)
+    for i in range(N) : idle[i] = visTime - total[i]
+    minIdle = min(idle)
+    
+    for i in range(N) : busy[i] = max(0.0, total[i] - idle[i])
+    
+    for i in range(N) : idle[i] = idle[i] - minIdle
+    for i in range(N) : indy500[i] = maxTotal - total[i]
+
+    dumpArray(total, 'total.hist')
+    dumpArray(idle, 'idle.hist')
+    dumpArray(busy, 'busy.hist')
+    dumpArray(indy500, 'indy500.hist')
+    print 'Total Idle= ', sum(idle)
+    print 'Total Busy= ', sum(busy)
+    print 'Total Total= ', sum(total)
+    titles = ['Total', 'Idle', 'Busy', 'Indy500']
+    plotVars = [total, idle, busy, indy500]
+
+    for f in fields[2:] :
+        titles.append(f)
+        plotVars.append(stats[f])
+
+    for (t,p) in zip(titles, plotVars) :
+        dumpArray(p, couplingType + '.' + t +'.hist')
+
+    # binVar = 20
+    # for (t,p) in zip(titles, plotVars) :        
+    #     plt.title(t)
+    #     plt.hist(p, bins=binVar)
+    #     plt.yscale('log')
+    #     plt.savefig(couplingType + '.' + t+'.png')
+    #     plt.show()        
+        
+    print 'appTime= ', appTime
+    print 'visTime= ', visTime
+
+def dumpVisTimeHistograms(stats, couplingType) :
+    vals = []
+    for s in stats :
+        vals.append(s['visTime'][0])
+
+    dumpArray(vals, couplingType + '.visTime.hist')
+    
+
 #####################################################
 ## main
 #####################################################
@@ -233,7 +306,8 @@ def ParseVisFiles(timingFiles, stats) :
 stats = []
 
 appOutputFile = sys.argv[2]
-outputFile = open(sys.argv[3], 'w') 
+outputFileName = sys.argv[3]
+outputFile = open(outputFileName, 'w')
 
 stats = ParseAppFile(appOutputFile, stats)
 if couplingType != 'noVis' :
@@ -256,5 +330,8 @@ else :
 dumpSummaryAverages(stats[SKIP:ENDSKIP], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)
 dumpRawData(stats, outputFile)
+
+dumpHistogramsAtStep(stats[98], fields, outputFileName, couplingType)
+dumpVisTimeHistograms(stats[SKIP:len(stats)-1], couplingType)
 
 outputFile.close()

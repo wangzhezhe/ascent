@@ -42,83 +42,40 @@
 # 
 ###############################################################################
 
-################################
-# Ascent 3rd Party Dependencies
-################################
-
 ###############################################################################
-# gtest, fruit, mpi,cuda, openmp, sphinx and doxygen are handled by blt
+#
+# Setup ADIOS2
+#
 ###############################################################################
 
-################################
-# Setup Python if requested
-################################
-if(ENABLE_PYTHON)
-    include(cmake/thirdparty/SetupPython.cmake)
-    message(STATUS "Using Python Include: ${PYTHON_INCLUDE_DIRS}")
-    include_directories(${PYTHON_INCLUDE_DIRS})
-    # if we don't find python, throw a fatal error
-    if(NOT PYTHON_FOUND)
-        message(FATAL_ERROR "ENABLE_PYTHON is true, but Python wasn't found.")
-    endif()
+# first Check for ADIOS2_DIR
+
+if(NOT ADIOS2_DIR)
+    MESSAGE(FATAL_ERROR "ADIOS2 support needs explicit ADIOS2_DIR")
 endif()
 
-################################
-# Conduit
-################################
-include(cmake/thirdparty/SetupConduit.cmake)
+MESSAGE(STATUS "Looking for ADIOS2 using ADIOS2_DIR = ${ADIOS2_DIR}")
 
+# CMake's FindADIOS2 module uses the ADIOS2_ROOT env var
+set(ADIOS2_ROOT ${ADIOS2_DIR})
+set(ENV{ADIOS2_ROOT} ${ADIOS2_ROOT})
 
-################################################################
-################################################################
-#
-# 3rd Party Libs that underpin Ascent's Pipelines
-#
-################################################################
-################################################################
+# Use CMake's FindADIOS2 module, which uses hdf5's compiler wrappers to extract
+# all the info about the hdf5 install
+include(${ADIOS2_DIR}/etc/FindADIOS2.cmake)
 
+# FindADIOS2 sets ADIOS2_DIR to it's installed CMake info if it exists
+# we want to keep ADIOS2_DIR as the root dir of the install to be 
+# consistent with other packages
 
-################################
-# VTKm and supporting libs
-################################
-if(VTKM_DIR)
-    # explicitly setting this avoids a bug with VTKm's cuda
-    # arch detection logic
-    set(VTKm_CUDA_Architecture "kepler" CACHE PATH "" FORCE)
+set(ADIOS2_DIR ${ADIOS2_ROOT} CACHE PATH "" FORCE)
+# not sure why we need to set this, but we do
+#set(ADIOS2_FOUND TRUE CACHE PATH "" FORCE)
 
-    ################################
-    # TBB (for VTK-M)
-    ################################
-    if(TBB_DIR) # optional 
-        include(cmake/thirdparty/SetupTBB.cmake)
-    endif()
-
-    ################################
-    # VTKm
-    ################################
-    include(cmake/thirdparty/SetupVTKm.cmake)
-
-    ################################
-    # VTKm
-    ################################
-    include(cmake/thirdparty/SetupVTKh.cmake)
+if(NOT ADIOS2_FOUND)
+    message(FATAL_ERROR "ADIOS2_DIR ${ADIOS2_DIR} is not a path to a valid ADIOS2 install")
 endif()
 
-################################
-# Setup HDF5
-################################
-if(HDF5_DIR)
-    include(cmake/thirdparty/SetupHDF5.cmake)
-endif()
-
-################################
-# Setup ADIOS
-################################  
-if (ADIOS_DIR)
-  include(cmake/thirdparty/SetupADIOS.cmake)
-endif()
-
-if (ADIOS2_DIR)
-    include(cmake/thirdparty/SetupADIOS2.cmake)
-endif()
-
+blt_register_library(NAME adios2
+                     INCLUDES ${ADIOS2_INCLUDE_DIRS}
+                     LIBRARIES ${ADIOS2_LIBRARIES} )

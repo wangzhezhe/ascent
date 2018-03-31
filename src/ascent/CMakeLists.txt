@@ -63,6 +63,8 @@ set(ASCENT_VTKH_ENABLED ${VTKM_FOUND})
 
 set(ASCENT_HDF5_ENABLED ${HDF5_FOUND})
 set(ASCENT_ADIOS_ENABLED ${ADIOS_FOUND})
+# ADDED
+set(ASCENT_ADIOS2_ENABLED ${ADIOS2_FOUND})
 
 if(ASCENT_VTKM_ENABLED)
     set(ASCENT_VTKM_USE_CUDA ${CUDA_FOUND})
@@ -201,7 +203,16 @@ if(MPI_FOUND)
     if (ADIOS_FOUND)
       list(APPEND ascent_headers runtimes/flow_filters/ascent_runtime_adios_filters.hpp)
       list(APPEND ascent_sources runtimes/flow_filters/ascent_runtime_adios_filters.cpp)
-       list(APPEND ascent_mpi_thirdparty_libs adios)
+      list(APPEND ascent_mpi_thirdparty_libs adios)
+    endif()
+
+    if (ADIOS2_FOUND)
+        list(APPEND ascent_headers runtimes/flow_filters/ascent_runtime_adios2_filters.hpp)
+        list(APPEND ascent_sources runtimes/flow_filters/ascent_runtime_adios2_filters.cpp)
+        include_directories(${ADIOS2_DIR}/lib)
+        include_directories(${ADIOS2_DIR}/include)
+        #list(APPEND ascent_mpi_thirdparty_libs c++ adios2 mpi adios2_dill adios2_atl adios2_enet adios2_ffs adios2_sst)
+        list(APPEND ascent_mpi_thirdparty_libs adios2)
     endif()
 
     list(APPEND ascent_mpi_thirdparty_libs ${ascent_thirdparty_libs})
@@ -217,9 +228,9 @@ if(MPI_FOUND)
         SOURCES     ${ascent_sources} ${ascent_mpi_sources}
         HEADERS     ${ascent_headers} ${ascent_mpi_headers}
         DEPENDS_ON  ${ascent_mpi_thirdparty_libs})
-    
     blt_add_target_compile_flags(TO ascent_mpi FLAGS "-D ASCENT_MPI_ENABLED")
 
+    #target_link_libraries(ascent_mpi PRIVATE "-lc++ -L/usr/local/lib -lmpi -L${ADIOS2_DIR}/lib -ladios2 -L/usr/local/Cellar/open-mpi/3.1.0/lib -ladios2_dill -ladios2_atl -ladios2_enet -ladios2_ffs -ladios2_sst")
     # install target for mpi ver
     install(TARGETS ascent_mpi
             EXPORT  ascent
@@ -235,5 +246,4 @@ endif()
 ########################################
 
 install(FILES ${ascent_headers} DESTINATION include/ascent)
-
 

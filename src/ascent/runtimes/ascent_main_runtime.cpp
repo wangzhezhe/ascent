@@ -118,6 +118,7 @@ AscentRuntime::~AscentRuntime()
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+    
 void
 AscentRuntime::Initialize(const conduit::Node &options)
 {
@@ -134,6 +135,7 @@ AscentRuntime::Initialize(const conduit::Node &options)
     MPI_Comm comm = MPI_Comm_f2c(options["mpi_comm"].to_int());
     vtkh::SetMPIComm(comm);
     MPI_Comm_rank(comm,&rank);
+
 #ifdef VTKM_CUDA
     //
     //  If we are using cuda, figure out how many devices we have and
@@ -380,6 +382,8 @@ AscentRuntime::CreatePipelines(const conduit::Node &pipelines)
   }
 }
 
+// DEBUGGING DELETE ME
+
 //-----------------------------------------------------------------------------
 void 
 AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
@@ -395,9 +399,19 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
     ASCENT_ERROR("Extract must have a 'type'");
   }
  
-  if(extract["type"].as_string() == "adios")
+  if(extract["type"].as_string() == "adios" || extract["type"].as_string() == "adios1")
   {
+      std::cout << "Setting filter to adios1" << std::endl;
     filter_name = "adios";
+  }
+  else if ( extract["type"].as_string() == "adios2" )
+  {
+      std::cout << "Setting filter to adios2" << std::endl;
+      filter_name = "adios2";
+      #if ASCENT_MPI_ENABLED
+      std::cout << "Ascent has MPI enabled" << std::endl;
+      #endif
+      ASCENT_ERROR("Test output");
   }
   else if(extract["type"].as_string() == "relay")
   {

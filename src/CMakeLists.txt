@@ -71,6 +71,9 @@ option(ENABLE_MPI         "Build MPI Support"         ON)
 option(ENABLE_CUDA        "Build CUDA Support"        OFF)
 option(ENABLE_OPENMP      "Build OpenMP Support"      OFF)
 
+## ADDED FOR TESTING
+include_directories(/opt/adios2/include)
+
 ################################
 # Invoke CMake Fortran setup
 # if ENABLE_FORTRAN == ON

@@ -70,5 +70,5 @@ set(VTKM_FOUND TRUE)
 blt_register_library(NAME vtkm
                      INCLUDES ${VTKm_INCLUDE_DIRS}
                      COMPILE_FLAGS ${VTKm_COMPILE_OPTIONS}
-                     LIBRARIES vtkm vtkm_cont vtkm_rendering
+                     LIBRARIES vtkm_cont vtkm_rendering
                      )

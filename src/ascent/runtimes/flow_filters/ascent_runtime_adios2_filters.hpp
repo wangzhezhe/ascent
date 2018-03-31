@@ -45,38 +45,17 @@
 
 //-----------------------------------------------------------------------------
 ///
-/// file: ascent_runtime_filters.cpp
+/// file: ascent_runtime_adios_filters.hpp
 ///
 //-----------------------------------------------------------------------------
 
-#include <ascent_runtime_filters.hpp>
+#ifndef ASCENT_FLOW_PIPELINE_ADIOS2_FILTERS_HPP
+#define ASCENT_FLOW_PIPELINE_ADIOS2_FILTERS_HPP
 
-
-//-----------------------------------------------------------------------------
-// ascent includes
-//-----------------------------------------------------------------------------
-#include <ascent_logging.hpp>
-#include <flow_workspace.hpp>
-
-#include <ascent_runtime_relay_filters.hpp>
-#include <ascent_runtime_blueprint_filters.hpp>
-
-#if defined(ASCENT_VTKM_ENABLED)
-    #include <ascent_runtime_vtkh_filters.hpp>
-#endif
-
+#include <flow_filter.hpp>
 #ifdef ASCENT_MPI_ENABLED
-#if defined(ASCENT_ADIOS_ENABLED)
-    #include <ascent_runtime_adios_filters.hpp>
+#include <mpi.h>
 #endif
-#if defined(ASCENT_ADIOS2_ENABLED)
-    #include <ascent_runtimes_adios2_filters.hpp>
-#endif
-#endif
-
-
-
-using namespace flow;
 
 //-----------------------------------------------------------------------------
 // -- begin ascent:: --
@@ -90,63 +69,78 @@ namespace ascent
 namespace runtime
 {
 
+
 //-----------------------------------------------------------------------------
 // -- begin ascent::runtime::filters --
 //-----------------------------------------------------------------------------
 namespace filters
 {
 
+//-----------------------------------------------------------------------------
+///
+/// Filters Related to Conduit Relay IO
+///
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 
-//-----------------------------------------------------------------------------
-// init all built in filters
-//-----------------------------------------------------------------------------
-void
-register_builtin()
+class ADIOS2 : public ::flow::Filter
 {
-    Workspace::register_filter_type<BlueprintVerify>(); 
-    Workspace::register_filter_type<RelayIOSave>();
-    Workspace::register_filter_type<RelayIOLoad>();
+public:
+    ADIOS2();
+   ~ADIOS2();
     
-#if defined(ASCENT_VTKM_ENABLED)
-    Workspace::register_filter_type<DefaultRender>();
-    Workspace::register_filter_type<EnsureVTKH>();
-    Workspace::register_filter_type<EnsureVTKM>();
-    Workspace::register_filter_type<EnsureBlueprint>();
+    virtual void   declare_interface(conduit::Node &i);
+    virtual bool   verify_params(const conduit::Node &params,
+                                 conduit::Node &info);
+    virtual void   execute();
 
-    Workspace::register_filter_type<VTKHBounds>();
-    Workspace::register_filter_type<VTKHUnionBounds>();
-
-    Workspace::register_filter_type<VTKHDomainIds>();
-    Workspace::register_filter_type<VTKHUnionDomainIds>();
+private:
+    bool UniformMeshSchema(const conduit::Node &node);
     
-    Workspace::register_filter_type<DefaultScene>();
+    bool RectilinearMeshSchema(const conduit::Node &node);
+    
+    bool FieldVariable(const std::string &fieldName, const conduit::Node &fieldNode);
 
+    bool CalcRectilinearMeshInfo(const conduit::Node &node,
+                                 std::vector<std::vector<double>> &globalCoords);
 
-    Workspace::register_filter_type<VTKHClip>();
-    Workspace::register_filter_type<VTKHClipWithField>();
-    Workspace::register_filter_type<VTKHIsoVolume>();
-    Workspace::register_filter_type<VTKHMarchingCubes>();
-    Workspace::register_filter_type<VTKHThreshold>();
-    Workspace::register_filter_type<VTKHSlice>();
-    Workspace::register_filter_type<VTKH3Slice>();
-
-    Workspace::register_filter_type<AddPlot>();
-    Workspace::register_filter_type<CreatePlot>();
-    Workspace::register_filter_type<CreateScene>();
-    Workspace::register_filter_type<ExecScene>();
-#endif
-
+    int rank, numRanks;
 #ifdef ASCENT_MPI_ENABLED
-#if defined(ASCENT_ADIOS_ENABLED)
-    Workspace::register_filter_type<ADIOS>();
-#endif
+    MPI_Comm mpi_comm;
+#else
+    int mpi_comm;
 #endif
     
+    int64_t adiosGroup, adiosFile;
+    std::string transportType;
+    std::string fileName;
+    std::string meshName;
 
-    
-}
+    //var dimensions for this rank:
+    std::vector<int64_t> globalDims, localDims, offset;
 
+    template <typename T>
+    std::string dimsToStr(const std::vector<T> &d, bool pointCentered=true)
+    {
+        std::string str("");
+        if (d.size() > 0)
+        {
+            for (int i = 0; i < d.size()-1; i++)
+            {
+                T v = d[i];
+                if (!pointCentered && v > 0)
+                    v--;
+                str = str + std::to_string(v) + ",";
+            }
 
+            T v = d[d.size()-1];
+            if (!pointCentered && v > 0)
+                v--;
+            str = str + std::to_string(v);
+        }
+        return str;
+    }
+};
 
 //-----------------------------------------------------------------------------
 };
@@ -154,16 +148,23 @@ register_builtin()
 // -- end ascent::runtime::filters --
 //-----------------------------------------------------------------------------
 
+
 //-----------------------------------------------------------------------------
 };
 //-----------------------------------------------------------------------------
 // -- end ascent::runtime --
 //-----------------------------------------------------------------------------
 
-
 //-----------------------------------------------------------------------------
 };
 //-----------------------------------------------------------------------------
 // -- end ascent:: --
 //-----------------------------------------------------------------------------
+
+
+#endif
+//-----------------------------------------------------------------------------
+// -- end header ifdef guard
+//-----------------------------------------------------------------------------
+
 

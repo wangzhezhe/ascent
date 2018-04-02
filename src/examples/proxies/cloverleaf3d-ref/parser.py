@@ -332,6 +332,6 @@ dumpSummaryStats2(stats, fields, selector, outputFile)
 dumpRawData(stats, outputFile)
 
 dumpHistogramsAtStep(stats[98], fields, outputFileName, couplingType)
-dumpVisTimeHistograms(stats[SKIP:len(stats)-1], couplingType)
+dumpVisTimeHistograms(stats[SKIP:ENDSKIP], couplingType)
 
 outputFile.close()

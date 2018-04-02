@@ -86,9 +86,9 @@ SUBROUTINE hydro
       IF(MOD(step, summary_frequency).EQ.0) CALL field_summary()
     ENDIF
 
-    IF ((wait_time - (timer() - step_time)).GT.0) THEN
-        WRITE(    0,*) 'Sleeping cloverleaf for ', (wait_time - (timer() - step_time))
-        call sleep(int(wait_time - (timer() - step_time)))
+    IF (wait_time.GT.0) THEN
+        WRITE(    0,*) 'Sleeping cloverleaf for ', (wait_time)
+        call sleep(int(wait_time))
     END IF
 
     IF(visit_frequency.NE.0) THEN

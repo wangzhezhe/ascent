@@ -60,7 +60,9 @@ set(BASIC_TESTS t_ascent_smoke
                 t_ascent_web_flow
                 t_ascent_web_main
                 t_ascent_clip
+                t_ascent_clip_with_field
                 t_ascent_contour
+                t_ascent_iso_volume
                 t_ascent_threshold
                 t_ascent_slice
                 t_ascent_flow_runtime)
@@ -97,6 +99,11 @@ endif()
 message(STATUS "Adding ascent lib unit tests")
 foreach(TEST ${BASIC_TESTS})
     add_cpp_test(TEST ${TEST} DEPENDS_ON ascent)
+    
+    if(PYTHON_FOUND AND ENABLE_PYTHON)
+        # this is needed for the inception tests ... 
+        set_property(TEST ${TEST} PROPERTY ENVIRONMENT  "PYTHONPATH=${CMAKE_BINARY_DIR}/python-modules/")
+    endif()
 endforeach()
 
 ################################
@@ -109,6 +116,11 @@ if(MPI_FOUND AND ENABLE_MPI)
         # this uses 2 procs
         add_cpp_mpi_test(TEST ${TEST} NUM_MPI_TASKS 2 DEPENDS_ON ascent_mpi) 
         set_target_properties( ${TEST} PROPERTIES COMPILE_FLAGS "-D PARALLEL")
+        
+        if(PYTHON_FOUND AND ENABLE_PYTHON)
+            # this is needed for the inception tests ... 
+            set_property(TEST ${TEST} PROPERTY ENVIRONMENT  "PYTHONPATH=${CMAKE_BINARY_DIR}/python-modules/")
+        endif()
     endforeach()
 else()
     message(STATUS "MPI disabled: Skipping related tests")

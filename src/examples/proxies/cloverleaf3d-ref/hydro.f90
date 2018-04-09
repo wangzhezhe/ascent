@@ -86,6 +86,7 @@ SUBROUTINE hydro
       IF(MOD(step, summary_frequency).EQ.0) CALL field_summary()
     ENDIF
 
+    CALL clover_barrier
     IF (wait_time.GT.0) THEN
         WRITE(    0,*) 'Sleeping cloverleaf for ', (wait_time)
         call sleep(int(wait_time))

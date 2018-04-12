@@ -257,7 +257,10 @@ ADIOS::execute()
     {
         adios_init_noxml(mpi_comm);
         adios_declare_group(&adiosGroup, groupName.c_str(), "iter", adios_stat_default);
-        adios_select_method(adiosGroup, "MPI", "", "");
+        adios_select_method(adiosGroup, 
+                            "MPI_AGGREGATE",
+                            "num_aggregators=1000,random_offset=1,striping_count=1,have_metadata_file=1", 
+                            "");
         adios_open(&adiosFile, groupName.c_str(), fileName.c_str(), "w", mpi_comm);
     }
     else if (transportType == "dataspaces")

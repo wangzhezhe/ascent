@@ -331,7 +331,8 @@ dumpSummaryAverages(stats[SKIP:ENDSKIP], fields, selector, outputFile)
 dumpSummaryStats2(stats, fields, selector, outputFile)
 dumpRawData(stats, outputFile)
 
-dumpHistogramsAtStep(stats[98], fields, outputFileName, couplingType)
+if couplingType != 'noVis' :
+    dumpHistogramsAtStep(stats[98], fields, outputFileName, couplingType)
 dumpVisTimeHistograms(stats[SKIP:ENDSKIP], couplingType)
 
 outputFile.close()

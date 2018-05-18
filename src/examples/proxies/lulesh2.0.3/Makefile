@@ -26,11 +26,11 @@ LDFLAGS = -g -O3 -fopenmp
 
 #Below are reasonable default flags for a serial build
 #CXXFLAGS = -g -O3 -I. -Wall
-#LDFLAGS = -g -O3 
+#LDFLAGS = -g -O3
 
 #common places you might find silo on the Livermore machines.
-#SILO_INCDIR = /opt/local/include
-#SILO_LIBDIR = /opt/local/lib
+SILO_INCDIR = /home/jkress/packages/visit2_12_3.linux-x86_64/2.12.3/linux-x86_64/include/silo/include/
+SILO_LIBDIR = /home/jkress/packages/visit2_12_3.linux-x86_64/2.12.3/linux-x86_64/lib/
 #SILO_INCDIR = ./silo/4.9/1.8.10.1/include
 #SILO_LIBDIR = ./silo/4.9/1.8.10.1/lib
 
@@ -39,8 +39,8 @@ LDFLAGS = -g -O3 -fopenmp
 #visit: https://wci.llnl.gov/codes/visit/download.html
 
 #below is and example of how to make with silo, hdf5 to get vizulization by default all this is turned off.  All paths are Livermore specific.
-#CXXFLAGS = -g -DVIZ_MESH -I${SILO_INCDIR} -Wall -Wno-pragmas
-#LDFLAGS = -g -L${SILO_LIBDIR} -Wl,-rpath -Wl,${SILO_LIBDIR} -lsiloh5 -lhdf5
+CXXFLAGS = -g -DVIZ_MESH -I${SILO_INCDIR} -Wall -Wno-pragmas
+LDFLAGS = -g -L${SILO_LIBDIR} -Wl,-rpath -Wl,${SILO_LIBDIR} -lsiloh5 -lhdf5
 
 .cc.o: lulesh.h
 	@echo "Building $<"
@@ -58,4 +58,3 @@ clean:
 
 tar: clean
 	cd .. ; tar cvf lulesh-2.0.tar LULESH-2.0 ; mv lulesh-2.0.tar LULESH-2.0
-

@@ -421,9 +421,11 @@ ADIOS::UniformMeshSchema(const Node &node)
 bool
 ADIOS::CalcExplicitMeshInfo(const conduit::Node &node, vector<vector<double>> &XYZ)
 {
-    const Node &X = node["x"];
-    const Node &Y = node["y"];
-    const Node &Z = node["z"];
+    const Node &X = node["values/x"];
+    const Node &Y = node["values/y"];
+    const Node &Z = node["values/z"];
+    //const Node &topo = node["connectivity"];
+    //const double *connectivityPtr = topo.as_float64_ptr();
 
     const double *xyzPtr[3] = {X.as_float64_ptr(),
                                Y.as_float64_ptr(),
@@ -526,7 +528,7 @@ ADIOS::ExplicitMeshSchema(const Node &node)
         return false;
 
     vector<vector<double>> XYZ;
-    if (!CalcExplicitMeshInfo(coords, XYZ))
+    if (!CalcExplicitMeshInfo(node, XYZ))
         return false;
 
     string coordNames[3] = {"coords_x", "coords_y", "coords_z"};

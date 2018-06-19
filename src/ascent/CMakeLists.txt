@@ -68,7 +68,7 @@ set(ASCENT_ADIOS2_ENABLED ${ADIOS2_FOUND})
 
 if(ASCENT_VTKM_ENABLED)
     set(ASCENT_VTKM_USE_CUDA ${CUDA_FOUND})
-    set(ASCENT_VTKM_USE_TBB  ${TBB_FOUND})
+    set(ASCENT_VTKM_USE_OPENMP ${ENABLE_OPENMP})
 endif()
 
 
@@ -169,8 +169,8 @@ if(CUDA_FOUND)
     list(APPEND ascent_thirdparty_libs cuda_runtime)
 endif()
 
-if(TBB_FOUND)
-    list(APPEND ascent_thirdparty_libs tbb)
+if(ENABLE_OPENMP)
+    list(APPEND ascent_thirdparty_libs openmp)
 endif()
 
 ##########################################

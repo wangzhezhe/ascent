@@ -234,7 +234,7 @@ ADIOS2::execute()
     #else
         adios2::ADIOS adios;
     #endif
-    adios2::IO bpIO = adios.DeclareIO("BPFILE");
+    adios2::IO adiosWriter = adios.DeclareIO("adiosWriter");
     // ************************************************************
     // <-----------
     //      adios_define_schema_version(adiosGroup, (char*)"1.1");
@@ -278,18 +278,12 @@ ADIOS2::execute()
     // I think this comes down but how are the variables coming through?
     if (transportType == "file")
     {
-        
-        adios2::Engine adiosWriter = bpIO.Open(fileName, adios2::Mode::Write);
-        //adios_init_noxml(mpi_comm);
-        ////adios_set_max_buffer_size(100);
-        //adios_declare_group(&adiosGroup, "test_data", "iter", adios_stat_default);
-        //adios_select_method(adiosGroup, "MPI", "", "");
-        //adios_open(&adiosFile, "test_data", fileName.c_str(), "w", mpi_comm);
-
+        adiosWriter.SetEngine("BPReader");
     }
     else if ( transportType == "sst" )
     {
         ASCENT_ERROR("SST is not enabled at this time");
+        //adiosWriter.SetEngine("SST");
     }
     else
     {
@@ -298,6 +292,7 @@ ADIOS2::execute()
     //adios_close(adiosFile);
     //I think I just need to open and close at write. Maybe close here
     //adiosWriter.Close();
+    //adios2::Engine adiosWriter = bpIO.Open(fileName, adios2::Mode::Write);
 
 }
 
@@ -424,16 +419,19 @@ ADIOS2::RectilinearMeshSchema(const Node &node)
         cout<<rank<<": localDims: "<<dimsToStr(localDims)<<endl;
         cout<<rank<<": offset: "<<dimsToStr(offset)<<endl;
         
+        /*
         adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
         adios_define_mesh_rectilinear((char*)dimsToStr(globalDims).c_str(),
                                       (char*)(coordNames[0]+","+coordNames[1]+","+coordNames[2]).c_str(),
                                       0,
                                       adiosGroup,
                                       meshName.c_str());
+                                      */
     }
 
     //Write out coordinates.
     int64_t ids[3];
+    /*
     for (int i = 0; i < 3; i++)
     {
         ids[i] = adios_define_var(adiosGroup,
@@ -445,6 +443,7 @@ ADIOS2::RectilinearMeshSchema(const Node &node)
                                   to_string(offset[i]).c_str());
         adios_write_byid(adiosFile, ids[i], (void *)&(XYZ[i][0]));
     }
+    */
     
     return true;
 }
@@ -489,6 +488,7 @@ ADIOS2::FieldVariable(const string &fieldName, const Node &node)
     cout<<"offset: "<<dimsToStr(offset, (fieldAssoc=="vertex"))<<endl;    
     */
     
+    /*
     int64_t varId = adios_define_var(adiosGroup,
                                      (char*)fieldName.c_str(),
                                      "",
@@ -503,6 +503,7 @@ ADIOS2::FieldVariable(const string &fieldName, const Node &node)
                                fieldName.c_str(),
                                (fieldAssoc == "vertex" ? "point" : "cell"));
     adios_write(adiosFile, fieldName.c_str(), (void*)vals);
+    */
 
     return true;
 }

@@ -1,45 +1,45 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 // Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
-// 
+//
 // Produced at the Lawrence Livermore National Laboratory
-// 
+//
 // LLNL-CODE-716457
-// 
+//
 // All rights reserved.
-// 
-// This file is part of Ascent. 
-// 
+//
+// This file is part of Ascent.
+//
 // For details, see: http://ascent.readthedocs.io/.
-// 
+//
 // Please also read ascent/LICENSE
-// 
-// Redistribution and use in source and binary forms, with or without 
+//
+// Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
-// 
-// * Redistributions of source code must retain the above copyright notice, 
+//
+// * Redistributions of source code must retain the above copyright notice,
 //   this list of conditions and the disclaimer below.
-// 
+//
 // * Redistributions in binary form must reproduce the above copyright notice,
 //   this list of conditions and the disclaimer (as noted below) in the
 //   documentation and/or other materials provided with the distribution.
-// 
+//
 // * Neither the name of the LLNS/LLNL nor the names of its contributors may
 //   be used to endorse or promote products derived from this software without
 //   specific prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 // ARE DISCLAIMED. IN NO EVENT SHALL LAWRENCE LIVERMORE NATIONAL SECURITY,
 // LLC, THE U.S. DEPARTMENT OF ENERGY OR CONTRIBUTORS BE LIABLE FOR ANY
-// DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+// DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
 // DAMAGES  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
 // OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, 
+// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-// IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
+// IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
 
@@ -128,9 +128,9 @@ AscentRuntime::Initialize(const conduit::Node &options)
     {
         ASCENT_ERROR("Missing Ascent::Open options missing MPI communicator (mpi_comm)");
     }
-    
+
     flow::Workspace::set_default_mpi_comm(options["mpi_comm"].to_int());
-   
+
     MPI_Comm comm = MPI_Comm_f2c(options["mpi_comm"].to_int());
     vtkh::SetMPIComm(comm);
     MPI_Comm_rank(comm,&rank);
@@ -147,7 +147,7 @@ AscentRuntime::Initialize(const conduit::Node &options)
         err = cudaSetDevice(rank_device);
         if(err != cudaSuccess)
         {
-            ASCENT_ERROR("Failed to set GPU " 
+            ASCENT_ERROR("Failed to set GPU "
                            <<rank_device
                            <<" out of "<<device_count
                            <<" GPUs. Make sure there"
@@ -178,21 +178,21 @@ AscentRuntime::Initialize(const conduit::Node &options)
                      "non-mpi ascent.\n Are you linking and loading the "
                      "correct version of ascent?");
     }
-    
+
 #endif
 
     m_runtime_options = options;
-    
+
     // standard flow filters
     flow::filters::register_builtin();
     // filters for ascent flow runtime.
     runtime::filters::register_builtin();
-    
-    if(options.has_path("web/stream") && 
+
+    if(options.has_path("web/stream") &&
        options["web/stream"].as_string() == "true" &&
        rank == 0)
     {
-        
+
         if(options.has_path("web/document_root"))
         {
             m_web_interface.SetDocumentRoot(options["web/document_root"].as_string());
@@ -205,7 +205,7 @@ AscentRuntime::Initialize(const conduit::Node &options)
     this->Info(msg["info"]);
     ascent::about(msg["about"]);
     m_web_interface.PushMessage(msg);
-    
+
 }
 
 
@@ -241,7 +241,7 @@ AscentRuntime::Publish(const conduit::Node &data)
 }
 
 //-----------------------------------------------------------------------------
-std::string 
+std::string
 AscentRuntime::CreateDefaultFilters()
 {
     const std::string end_filter = "vtkh_data";
@@ -249,9 +249,9 @@ AscentRuntime::CreateDefaultFilters()
     {
       return end_filter;
     }
-    // 
+    //
     // Here we are creating the default set of filters that all
-    // pipelines will connect to. It verifies the mesh and 
+    // pipelines will connect to. It verifies the mesh and
     // ensures we have a vtkh data set going forward.
     //
     conduit::Node params;
@@ -260,7 +260,7 @@ AscentRuntime::CreateDefaultFilters()
     w.graph().add_filter("blueprint_verify", // registered filter name
                          "verify",           // "unique" filter name
                          params);
-    
+
     w.graph().connect("source",
                       "verify",
                       0);        // default port
@@ -275,11 +275,11 @@ AscentRuntime::CreateDefaultFilters()
     return end_filter;
 }
 //-----------------------------------------------------------------------------
-void 
-AscentRuntime::ConvertToFlowGraph(const conduit::Node &pipeline,
-                                  const std::string pipeline_name)
+void
+AscentRuntime::ConvertPipelineToFlow(const conduit::Node &pipeline,
+                                     const std::string pipeline_name)
 {
-    std::string prev_name = CreateDefaultFilters(); 
+    std::string prev_name = CreateDefaultFilters();
 
     for(int i = 0; i < pipeline.number_of_children(); ++i)
     {
@@ -293,9 +293,9 @@ AscentRuntime::ConvertToFlowGraph(const conduit::Node &pipeline,
       }
 
       std::string type = filter["type"].as_string();
-      
+
       bool has_params = filter.has_path("params");
-      bool needs_params = true; 
+      bool needs_params = true;
 
       if(type == "contour")
       {
@@ -321,7 +321,6 @@ AscentRuntime::ConvertToFlowGraph(const conduit::Node &pipeline,
       {
         filter_name = "vtkh_slice";
       }
-
       else if(type == "3slice")
       {
         filter_name = "vtkh_3slice";
@@ -330,6 +329,10 @@ AscentRuntime::ConvertToFlowGraph(const conduit::Node &pipeline,
       else if(type == "pointaverage")
       {
         filter_name = "vtkh_pointaverage";
+      }
+      else if(type == "NoOp")
+      {
+        filter_name = "vtkh_no_op";
       }
       else
       {
@@ -341,14 +344,14 @@ AscentRuntime::ConvertToFlowGraph(const conduit::Node &pipeline,
         filter.print();
         ASCENT_ERROR("Filter "<<type<<" must  declare a 'params'");
       }
-     
+
       // create a unique name for the filter
       std::stringstream ss;
       ss<<pipeline_name<<"_"<<i<<"_"<<filter_name;
-      std::string name = ss.str(); 
-      
+      std::string name = ss.str();
+
       w.graph().add_filter(filter_name,
-                           name,           
+                           name,
                            filter["params"]);
 
       w.graph().connect(prev_name, // src
@@ -356,40 +359,41 @@ AscentRuntime::ConvertToFlowGraph(const conduit::Node &pipeline,
                         0);        // default port
       prev_name = name;
     }
-  
+
     if(w.graph().has_filter(pipeline_name))
     {
       ASCENT_INFO("Duplicate pipeline name "<<pipeline_name
-                  <<" original is being overwritted");
+                  <<" over writing original");
     }
+
     // create an alias passthrough filter so plots and extracts
     // can connect to the end result by pipeline name
     w.graph().add_filter("alias",
                          pipeline_name);
-    
+
     w.graph().connect(prev_name,     // src
                       pipeline_name, // dest
                       0);            // default port
 }
 
 //-----------------------------------------------------------------------------
-void 
+void
 AscentRuntime::CreatePipelines(const conduit::Node &pipelines)
 {
-  std::vector<std::string> names = pipelines.child_names(); 
+  std::vector<std::string> names = pipelines.child_names();
   for(int i = 0; i < pipelines.number_of_children(); ++i)
   {
     conduit::Node pipe = pipelines.child(i);
-    ConvertToFlowGraph(pipe, names[i]);
+    ConvertPipelineToFlow(pipe, names[i]);
   }
 }
 
 //-----------------------------------------------------------------------------
-void 
+void
 AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
                                     const std::string extract_name)
 {
-  std::string filter_name; 
+  std::string filter_name;
 
   conduit::Node params;
   if(extract.has_path("params")) params = extract["params"];
@@ -398,7 +402,7 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
   {
     ASCENT_ERROR("Extract must have a 'type'");
   }
- 
+
   if(extract["type"].as_string() == "adios")
   {
     filter_name = "adios";
@@ -415,7 +419,7 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
   else if(extract["type"].as_string() == "python")
   {
     filter_name = "python_script";
-    
+
     // customize the names of the script integration funcs
     params["interface/input"] = "ascent_data";
     params["interface/set_output"] = "ascent_set_output";
@@ -427,17 +431,17 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
     MPI_Comm comm = MPI_Comm_f2c(comm_id);
     int rank = relay::mpi::rank(comm);
     MPI_Comm_rank(comm,&rank);
-    
+
      if(params.has_path("file"))
      {
        Node n_py_src;
-       // read script only on rank 0 
+       // read script only on rank 0
        if(rank == 0)
        {
-         ostringstream py_src; 
+         ostringstream py_src;
          std::string script_fname = params["file"].as_string();
          ifstream ifs(script_fname.c_str());
-         
+
          py_src << "# script from: " << script_fname << std::endl;
          copy(istreambuf_iterator<char>(ifs),
               istreambuf_iterator<char>(),
@@ -446,7 +450,7 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
        }
 
        relay::mpi::broadcast_using_schema(n_py_src,0,comm);
-       
+
        if(!n_py_src.dtype().is_string())
        {
          ASCENT_ERROR("broadcast of python script source failed");
@@ -474,15 +478,15 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
   }
   if(w.graph().has_filter(extract_name))
   {
-    ASCENT_ERROR("Cannot add extract filter, extract named" 
+    ASCENT_ERROR("Cannot add extract filter, extract named"
                  << " \"" << extract_name << "\""
                  << " already exists");
   }
 
 
   std::string ensure_name = "ensure_blueprint_" + extract_name;
-  conduit::Node empty_params; 
-  
+  conduit::Node empty_params;
+
   w.graph().add_filter("ensure_blueprint",
                        ensure_name,
                        empty_params);
@@ -493,7 +497,7 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
 
   //
   // We can't connect the extract to the pipeline since
-  // we want to allow users to specify actions any any order 
+  // we want to allow users to specify actions any any order
   //
   std::string extract_source;
   if(extract.has_path("pipeline"))
@@ -502,26 +506,26 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
   }
   else
   {
-    // this is the blueprint mesh 
+    // this is the blueprint mesh
     extract_source = "source";
   }
-  
+
   m_connections[ensure_name] = extract_source;
   m_connections[extract_name] = ensure_name;
 
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void 
+void
 AscentRuntime::ConvertPlotToFlow(const conduit::Node &plot,
                                  const std::string plot_name)
 {
-  std::string filter_name = "create_plot";; 
+  std::string filter_name = "create_plot";;
 
   if(w.graph().has_filter(plot_name))
   {
     ASCENT_INFO("Duplicate plot name "<<plot_name
-                <<" original is being overwritted");
+                <<" over writing original");
   }
 
   w.graph().add_filter(filter_name,
@@ -530,7 +534,7 @@ AscentRuntime::ConvertPlotToFlow(const conduit::Node &plot,
 
   //
   // We can't connect the plot to the pipeline since
-  // we want to allow users to specify actions any any order 
+  // we want to allow users to specify actions any any order
   //
   std::string plot_source;
   if(plot.has_path("pipeline"))
@@ -546,10 +550,10 @@ AscentRuntime::ConvertPlotToFlow(const conduit::Node &plot,
 
 }
 //-----------------------------------------------------------------------------
-void 
+void
 AscentRuntime::CreatePlots(const conduit::Node &plots)
 {
-  std::vector<std::string> names = plots.child_names(); 
+  std::vector<std::string> names = plots.child_names();
   for(int i = 0; i < plots.number_of_children(); ++i)
   {
     conduit::Node plot = plots.child(i);
@@ -557,10 +561,10 @@ AscentRuntime::CreatePlots(const conduit::Node &plots)
   }
 }
 //-----------------------------------------------------------------------------
-void 
+void
 AscentRuntime::CreateExtracts(const conduit::Node &extracts)
 {
-  std::vector<std::string> names = extracts.child_names(); 
+  std::vector<std::string> names = extracts.child_names();
   for(int i = 0; i < extracts.number_of_children(); ++i)
   {
     conduit::Node extract = extracts.child(i);
@@ -569,7 +573,7 @@ AscentRuntime::CreateExtracts(const conduit::Node &extracts)
 }
 
 //-----------------------------------------------------------------------------
-void 
+void
 AscentRuntime::ConnectSource()
 {
     // note: if the reg entry for data was already added
@@ -590,17 +594,17 @@ AscentRuntime::ConnectSource()
 }
 
 //-----------------------------------------------------------------------------
-void 
+void
 AscentRuntime::ConnectGraphs()
 {
-  //create plot + pipeline graphs
-  std::vector<std::string> names = m_connections.child_names(); 
+  //connect plot + pipeline graphs
+  std::vector<std::string> names = m_connections.child_names();
   for (int i = 0; i < m_connections.number_of_children(); ++i)
-  { 
-    std::string pipeline = m_connections[names[i]].as_string(); 
+  {
+    std::string pipeline = m_connections[names[i]].as_string();
     if(pipeline == "default")
-    { 
-      pipeline = CreateDefaultFilters(); 
+    {
+      pipeline = CreateDefaultFilters();
     }
     else if(!w.graph().has_filter(pipeline))
     {
@@ -613,11 +617,12 @@ AscentRuntime::ConnectGraphs()
   }
 }
 
+//-----------------------------------------------------------------------------
 std::vector<std::string>
 AscentRuntime::GetPipelines(const conduit::Node &plots)
 {
   std::vector<std::string> pipelines;
-  std::vector<std::string> names = plots.child_names(); 
+  std::vector<std::string> names = plots.child_names();
   for(int i = 0; i < plots.number_of_children(); ++i)
   {
     conduit::Node plot = plots.child(i);
@@ -628,14 +633,14 @@ AscentRuntime::GetPipelines(const conduit::Node &plots)
     }
     else
     {
-      pipeline = CreateDefaultFilters(); 
+      pipeline = CreateDefaultFilters();
     }
     pipelines.push_back(pipeline);
   }
   return pipelines;
 }
 
-std::string 
+std::string
 AscentRuntime::GetDefaultImagePrefix(const std::string scene)
 {
   static conduit::Node image_counts;
@@ -646,17 +651,17 @@ AscentRuntime::GetDefaultImagePrefix(const std::string scene)
   }
   count = image_counts[scene].as_int32();
   image_counts[scene] = count + 1;
-  
+
   std::stringstream ss;
   ss<<scene<<"_"<<count;
-  return ss.str(); 
+  return ss.str();
 }
 
 void
 AscentRuntime::CreateScenes(const conduit::Node &scenes)
 {
 
-  std::vector<std::string> names = scenes.child_names(); 
+  std::vector<std::string> names = scenes.child_names();
   const int num_scenes = scenes.number_of_children();
   for(int i = 0; i < num_scenes; ++i)
   {
@@ -666,12 +671,12 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
       ASCENT_ERROR("Default scene not implemented");
     }
 
-    // create the default render 
+    // create the default render
     conduit::Node render_params;
     if(scene.has_path("renders"))
     {
       render_params["renders"] = scene["renders"];
-    } 
+    }
 
     int plot_count = scene["plots"].number_of_children();
     render_params["pipeline_count"] = plot_count;
@@ -682,13 +687,13 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
     }
     else
     {
-      std::string image_prefix = GetDefaultImagePrefix(names[i]); 
+      std::string image_prefix = GetDefaultImagePrefix(names[i]);
       render_params["image_prefix"] = image_prefix;
     }
 
     render_params["pipeline_count"] = plot_count;
-    std::string renders_name = names[i] + "_renders";           
-    
+    std::string renders_name = names[i] + "_renders";
+
     w.graph().add_filter("default_render",
                           renders_name,
                           render_params);
@@ -708,11 +713,11 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
                       1);             // default port
 
     // ------------ NEW -----------------
-    
-    std::vector<std::string> pipelines = GetPipelines(scene["plots"]); 
+
+    std::vector<std::string> pipelines = GetPipelines(scene["plots"]);
     std::vector<std::string> plot_names = scene["plots"].child_names();
-    
-    // create plots with scene name appended 
+
+    // create plots with scene name appended
     conduit::Node appended_plots;
     for(int k = 0; k < plot_names.size(); ++k)
     {
@@ -728,12 +733,12 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
     std::vector<std::string> union_bounds_names;
     std::vector<std::string> domain_ids_names;
     std::vector<std::string> union_domain_ids_names;
-    
+
     //
     // as we add plots we aggregate them into the scene.
     // each add_plot filter output the sene and we have to
     // connect that to the next plot. At the end, we connect
-    // the final output to the ExecPlot filter that actually 
+    // the final output to the ExecPlot filter that actually
     // calls render() on the scene.
     //
     std::string prev_add_plot_name = "";
@@ -749,7 +754,7 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
       // create unions of all inputs to feed to the render.
       //
       std::string bounds_name = plot_names[p] + "_bounds";
-      conduit::Node empty; 
+      conduit::Node empty;
       w.graph().add_filter("vtkh_bounds",
                             bounds_name,
                             empty);
@@ -758,7 +763,7 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
                         bounds_name,  // dest
                         0);           // default port
       bounds_names.push_back(bounds_name);
-  
+
       std::string domain_ids_name = plot_names[p] + "_domain_ids";
       w.graph().add_filter("vtkh_domain_ids",
                             domain_ids_name,
@@ -768,7 +773,7 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
                         domain_ids_name,  // dest
                         0);               // default port
       domain_ids_names.push_back(domain_ids_name);
-  
+
       //
       // we have more than one. Create union filters.
       //
@@ -800,8 +805,8 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
         }
         else
         {
-          // all subsequent unions needs the bounds of 
-          // the current plot and the output of the 
+          // all subsequent unions needs the bounds of
+          // the current plot and the output of the
           // previous union
           //
           w.graph().connect(union_bounds_names[p-2],  // src
@@ -826,33 +831,33 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
       std::string add_name = "add_plot_" + plot_names[p];
       w.graph().add_filter("add_plot",
                             add_name);
-    
+
       std::string src_scene = prev_add_plot_name;
 
       if(prev_add_plot_name == "")
       {
         src_scene = "create_scene_" + names[i];
       }
-      prev_add_plot_name = add_name; 
-      
+      prev_add_plot_name = add_name;
+
       // connect the plot to add_plot
       w.graph().connect(plot_names[p], // src
                         add_name,      // dest
                         1);            // plot port
-      
+
       // connect the scene to add_plot
       w.graph().connect(src_scene,     // src
                         add_name,      // dest
                         0);            // scene port
-      
+
     }
-  
+
     //
     // Connect the total bounds and domain ids
     // up to the render inputs
     //
-    std::string bounds_output; 
-    std::string domain_ids_output; 
+    std::string bounds_output;
+    std::string domain_ids_output;
 
     if(bounds_names.size() == 1)
     {
@@ -865,7 +870,7 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
       bounds_output = union_bounds_names[union_size-1];
       domain_ids_output = union_domain_ids_names[union_size-1];
     }
-      
+
     w.graph().connect(bounds_output, // src
                       renders_name,  // dest
                       0);            // default port
@@ -873,7 +878,7 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
     w.graph().connect(domain_ids_output, // src
                       renders_name,      // dest
                       1);                // default port
-    
+
     // connect Exec Scene to the output of the last
     // add_plot and to the renders
     w.graph().connect(prev_add_plot_name, // src
@@ -887,12 +892,12 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
 }
 
 void
-AscentRuntime::FindRenders(const conduit::Node &info, 
+AscentRuntime::FindRenders(const conduit::Node &info,
                            conduit::Node &out)
 {
-    out.reset();    
+    out.reset();
     NodeConstIterator itr = info["flow_graph/graph/filters"].children();
-    
+
     while(itr.has_next())
     {
         const Node &curr_filter = itr.next();
@@ -903,7 +908,7 @@ AscentRuntime::FindRenders(const conduit::Node &info,
             out.append() = img_path;
         }
     }
-    
+
 }
 
 //-----------------------------------------------------------------------------
@@ -920,7 +925,7 @@ AscentRuntime::Execute(const conduit::Node &actions)
         string action_name = action["action"].as_string();
 
         ASCENT_INFO("Executing " << action_name);
-        
+
         if(action_name == "add_pipelines")
         {
           CreatePipelines(action["pipelines"]);
@@ -930,19 +935,19 @@ AscentRuntime::Execute(const conduit::Node &actions)
         {
           CreateScenes(action["scenes"]);
         }
-        
+
         if(action_name == "add_extracts")
         {
           CreateExtracts(action["extracts"]);
         }
-        
+
         else if( action_name == "execute")
         {
           ConnectGraphs();
           w.info(m_info["flow_graph"]);
           w.execute();
           w.registry().reset();
-          
+
           Node msg;
           this->Info(msg["info"]);
           ascent::about(msg["about"]);
@@ -968,6 +973,3 @@ AscentRuntime::Execute(const conduit::Node &actions)
 //-----------------------------------------------------------------------------
 // -- end ascent:: --
 //-----------------------------------------------------------------------------
-
-
-

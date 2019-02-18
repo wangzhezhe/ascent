@@ -2,7 +2,7 @@ import os, sys, glob
 #import numpy
 #import matplotlib.pyplot as plt
 
-SKIP = 2
+SKIP = 1
 
 if len(sys.argv) != 6 :
     print 'usage: %s timing-file-pattern app-output-file output-file tight/loose/noVis numSteps' % sys.argv[0]

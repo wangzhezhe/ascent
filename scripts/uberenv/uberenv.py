@@ -125,6 +125,14 @@ def parse_args():
                       default=False,
                       help="Ignore SSL Errors")
 
+    # flag to use insecure curl + git
+    parser.add_option("--pull",
+                      action="store_true",
+                      dest="spack_pull",
+                      default=False,
+                      help="Pull if spack repo already exists")
+
+
     ###############
     # parse args
     ###############
@@ -134,6 +142,9 @@ def parse_args():
     opts = vars(opts)
     if not opts["spack_config_dir"] is None:
         opts["spack_config_dir"] = os.path.abspath(opts["spack_config_dir"])
+        if not os.path.isdir(opts["spack_config_dir"]):
+            print "[ERROR: invalid spack config dir: %s ]" % opts["spack_config_dir"]
+            sys.exit(-1)
     return opts, extras
 
 
@@ -206,31 +217,12 @@ def patch_spack(spack_dir,uberenv_dir,cfg_dir,pkgs):
 
         if os.path.isfile(packages_yaml):
             sexe("cp %s %s/" % (packages_yaml, spack_etc_defaults_dir ), echo=True)
+    else:
+        # let spack try to auto find compilers
+        sexe("spack/bin/spack compiler find", echo=True)
     dest_spack_pkgs = pjoin(spack_dir,"var","spack","repos","builtin","packages")
     # hot-copy our packages into spack
     sexe("cp -Rf %s %s" % (pkgs,dest_spack_pkgs))
-
-
-# def patch_spack_old(spack_dir,compilers_yaml,pkgs):
-#     # force uberenv config
-#     spack_lib_config = pjoin(spack_dir,"lib","spack","spack","config.py")
-#     print "[disabling user config scope in: %s]" % spack_lib_config
-#     cfg_script = open(spack_lib_config).read()
-#     src = "ConfigScope('user', os.path.expanduser('~/.spack'))"
-#     cfg_script = cfg_script.replace(src, "#DISABLED BY UBERENV: " + src)
-#     open(spack_lib_config,"w").write(cfg_script)
-#     # copy in the compiler spec
-#     print "[copying uberenv compiler specs]"
-#     spack_etc = pjoin(spack_dir,"etc")
-#     if not os.path.isdir(spack_etc):
-#         os.mkdir(spack_etc)
-#     spack_etc = pjoin(spack_etc,"spack")
-#     if not os.path.isdir(spack_etc):
-#         os.mkdir(spack_etc)
-#     sexe("cp %s spack/etc/spack/compilers.yaml" % compilers_yaml, echo=True)
-#     dest_spack_pkgs = pjoin(spack_dir,"var","spack","repos","builtin","packages")
-#     # hot-copy our packages into spack
-#     sexe("cp -Rf %s %s" % (pkgs,dest_spack_pkgs))
 
 
 def create_spack_mirror(mirror_path,pkg_name,ignore_ssl_errors=False):
@@ -330,6 +322,11 @@ def setup_osx_sdk_env_vars():
     print "[setting MACOSX_DEPLOYMENT_TARGET to %s]" % env["MACOSX_DEPLOYMENT_TARGET"]
     print "[setting SDKROOT to %s]" % env[ "SDKROOT" ]
 
+def read_spack_full_spec(pkg_name,spec):
+    rv, res = sexe("spack/bin/spack spec " + pkg_name + " " + spec, ret_output=True)
+    for l in res.split("\n"):
+        if l.startswith(pkg_name) and l.count("@") > 0 and l.count("arch=") > 0:
+            return l.strip()
 def main():
     """
     clones and runs spack to setup our third_party libs and
@@ -369,7 +366,7 @@ def main():
         print "[info: destination '%s' already exists]"  % dest_dir
     if os.path.isdir(dest_spack):
         print "[info: destination '%s' already exists]"  % dest_spack
-    # compilers_yaml = uberenv_compilers_yaml_file(opts)
+
     if not os.path.isdir(dest_spack):
         print "[info: cloning spack develop branch from github]"
         os.chdir(dest_dir)
@@ -377,18 +374,33 @@ def main():
         clone_cmd ="git "
         if opts["ignore_ssl_errors"]:
             clone_cmd +="-c http.sslVerify=false "
-        clone_cmd += "clone -b develop https://github.com/spack/spack.git"
+        spack_url = "https://github.com/spack/spack.git"
+        spack_branch = "develop"
+        if "spack_url" in project_opts:
+            spack_url = project_opts["spack_url"]
+        if "spack_branch" in project_opts:
+            spack_branch = project_opts["spack_branch"]
+        clone_cmd +=  "clone -b %s %s" % (spack_branch,spack_url)
         sexe(clone_cmd, echo=True)
-        if "spack_develop_commit" in project_opts:
-            sha1 = project_opts["spack_develop_commit"]
-            print "[info: using spack develop %s]" % sha1
+        if "spack_commit" in project_opts:
+            sha1 = project_opts["spack_commit"]
+            print "[info: using spack commit %s]" % sha1
             os.chdir(pjoin(dest_dir,"spack"))
-            sexe("git reset --hard %s" % sha1)
-
+            sexe("git reset --hard %s" % sha1,echo=True)
+    if opts["spack_pull"]:
+        # do a pull to make sure we have the latest 
+        os.chdir(pjoin(dest_dir,"spack"))
+        sexe("git stash", echo=True)
+        sexe("git pull", echo=True)
     os.chdir(dest_dir)
     # twist spack's arms 
     cfg_dir = uberenv_spack_config_dir(opts, uberenv_path)
     patch_spack(dest_spack, uberenv_path, cfg_dir, pkgs)
+
+    # show the spec for what will be built
+    spec_cmd = "spack/bin/spack spec " + uberenv_pkg_name + opts["spec"]
+    res = sexe(spec_cmd, echo=True)
+
 
     ##########################################################
     # we now have an instance of spack configured how we 
@@ -419,9 +431,19 @@ def main():
         if res != 0:
             return res
         if "spack_activate" in project_opts:
-            for pkg_name in project_opts["spack_activate"]:
-              activate_cmd = "spack/bin/spack activate " + pkg_name
-              sexe(activate_cmd, echo=True)   
+            # get the full spack spec for our project
+            full_spec = read_spack_full_spec(uberenv_pkg_name,opts["spec"])
+            pkg_names = project_opts["spack_activate"].keys()
+            for pkg_name in pkg_names:
+                pkg_spec_requirements = project_opts["spack_activate"][pkg_name]
+                activate=True
+                for req in pkg_spec_requirements:
+                    if req not in full_spec:
+                        activate=False
+                        break
+                if activate:
+                    activate_cmd = "spack/bin/spack activate " + pkg_name
+                    sexe(activate_cmd, echo=True)
         return res
 
 if __name__ == "__main__":

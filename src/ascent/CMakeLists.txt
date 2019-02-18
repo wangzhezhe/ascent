@@ -66,7 +66,7 @@ set(ASCENT_ADIOS_ENABLED ${ADIOS_FOUND})
 
 if(ASCENT_VTKM_ENABLED)
     set(ASCENT_VTKM_USE_CUDA ${CUDA_FOUND})
-    set(ASCENT_VTKM_USE_TBB  ${TBB_FOUND})
+    set(ASCENT_VTKM_USE_OPENMP ${ENABLE_OPENMP})
 endif()
 
 
@@ -90,7 +90,9 @@ set(ascent_sources
     utils/ascent_file_system.cpp
     utils/ascent_block_timer.cpp
     utils/ascent_png_encoder.cpp
-    utils/ascent_web_interface.cpp)
+    utils/ascent_web_interface.cpp
+    # hola
+    hola/ascent_hola.cpp)
 
 set(ascent_headers
     # ascent interface
@@ -106,13 +108,14 @@ set(ascent_headers
     runtimes/flow_filters/ascent_runtime_filters.hpp
     runtimes/flow_filters/ascent_runtime_relay_filters.hpp
     runtimes/flow_filters/ascent_runtime_blueprint_filters.hpp
-
     # utils
     utils/ascent_logging.hpp
     utils/ascent_file_system.hpp
     utils/ascent_block_timer.hpp
     utils/ascent_png_encoder.hpp
-    utils/ascent_web_interface.hpp)
+    utils/ascent_web_interface.hpp
+    # hola
+    hola/ascent_hola.hpp)
 
 if(VTKM_FOUND)
 
@@ -136,7 +139,8 @@ endif()
 #############################
 
 if(FORTRAN_FOUND)
-    list(APPEND ascent_sources fortran/ascent_fortran.f90)
+    add_library(ascent_fortran OBJECT fortran/ascent_fortran.f90)
+    list(APPEND ascent_sources $<TARGET_OBJECTS:ascent_fortran>)
 endif()
 
 ################################
@@ -167,8 +171,8 @@ if(CUDA_FOUND)
     list(APPEND ascent_thirdparty_libs cuda_runtime)
 endif()
 
-if(TBB_FOUND)
-    list(APPEND ascent_thirdparty_libs tbb)
+if(ENABLE_OPENMP)
+    list(APPEND ascent_thirdparty_libs openmp)
 endif()
 
 ##########################################
@@ -197,19 +201,27 @@ if(MPI_FOUND)
     # req'd libs 
     set(ascent_mpi_thirdparty_libs mpi conduit_relay_mpi)
 
+    # hola mpi support is only in par (mpi ver)
+
+    list(APPEND ascent_headers runtimes/flow_filters/ascent_runtime_hola_filters.hpp)
+    list(APPEND ascent_sources runtimes/flow_filters/ascent_runtime_hola_filters.cpp)
+
+    list(APPEND ascent_headers hola/ascent_hola_mpi.hpp)
+    list(APPEND ascent_sources hola/ascent_hola_mpi.cpp)
+
     # adios support is only in par (mpi ver)
     if (ADIOS_FOUND)
-      list(APPEND ascent_headers runtimes/flow_filters/ascent_runtime_adios_filters.hpp)
-      list(APPEND ascent_sources runtimes/flow_filters/ascent_runtime_adios_filters.cpp)
+       list(APPEND ascent_headers runtimes/flow_filters/ascent_runtime_adios_filters.hpp)
+       list(APPEND ascent_sources runtimes/flow_filters/ascent_runtime_adios_filters.cpp)
        list(APPEND ascent_mpi_thirdparty_libs adios)
     endif()
 
     list(APPEND ascent_mpi_thirdparty_libs ${ascent_thirdparty_libs})
 
     if(VTKM_FOUND)
-        # swap vtkh_par for vtkh
+        # swap vtkh_mpi for vtkh
         list(REMOVE_ITEM ascent_mpi_thirdparty_libs vtkh)
-        list(APPEND ascent_mpi_thirdparty_libs vtkh_par)
+        list(APPEND ascent_mpi_thirdparty_libs vtkh_mpi)
     endif()
 
     blt_add_library(

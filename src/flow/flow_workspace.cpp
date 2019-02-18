@@ -1,45 +1,45 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 // Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
-// 
+//
 // Produced at the Lawrence Livermore National Laboratory
-// 
+//
 // LLNL-CODE-716457
-// 
+//
 // All rights reserved.
-// 
-// This file is part of Ascent. 
-// 
+//
+// This file is part of Ascent.
+//
 // For details, see: http://ascent.readthedocs.io/.
-// 
+//
 // Please also read alpine/LICENSE
-// 
-// Redistribution and use in source and binary forms, with or without 
+//
+// Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
-// 
-// * Redistributions of source code must retain the above copyright notice, 
+//
+// * Redistributions of source code must retain the above copyright notice,
 //   this list of conditions and the disclaimer below.
-// 
+//
 // * Redistributions in binary form must reproduce the above copyright notice,
 //   this list of conditions and the disclaimer (as noted below) in the
 //   documentation and/or other materials provided with the distribution.
-// 
+//
 // * Neither the name of the LLNS/LLNL nor the names of its contributors may
 //   be used to endorse or promote products derived from this software without
 //   specific prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 // ARE DISCLAIMED. IN NO EVENT SHALL LAWRENCE LIVERMORE NATIONAL SECURITY,
 // LLC, THE U.S. DEPARTMENT OF ENERGY OR CONTRIBUTORS BE LIABLE FOR ANY
-// DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+// DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
 // DAMAGES  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
 // OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, 
+// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-// IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
+// IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
 
@@ -50,15 +50,13 @@
 //-----------------------------------------------------------------------------
 
 #include "flow_workspace.hpp"
+#include "flow_timer.hpp"
 
 // standard lib includes
 #include <iostream>
 #include <string.h>
 #include <limits.h>
 #include <cstdlib>
-#include <chrono>
-#include <sys/time.h>
-#include <mpi.h>
 
 using namespace conduit;
 using namespace std;
@@ -69,7 +67,7 @@ using namespace std;
 //-----------------------------------------------------------------------------
 namespace flow
 {
-    
+
 // we init m_default_mpi_comm to -1, it's not clear if we can
 // pick a safe non-inited value w/o the mpi headers, but
 // we will try this strategy.
@@ -82,11 +80,11 @@ class Workspace::ExecutionPlan
 
         static void generate(Graph &g,
                              conduit::Node &traversals);
-        
+
     private:
         ExecutionPlan();
         ~ExecutionPlan();
-        
+
         static void bf_topo_sort_visit(Graph &graph,
                                        const std::string &filter_name,
                                        conduit::Node &tags,
@@ -102,7 +100,7 @@ public:
     {
         return m_filter_types;
     }
-        
+
 private:
     static std::map<std::string,FilterFactoryMethod> m_filter_types;
 };
@@ -128,14 +126,14 @@ Workspace::ExecutionPlan::~ExecutionPlan()
 void
 Workspace::ExecutionPlan::generate(Graph &graph,
                                    conduit::Node &traversals)
-{   
+{
     traversals.reset();
 
     Node snks;
     Node srcs;
 
     std::map<std::string,Filter*>::iterator itr;
-    
+
     for(itr  = graph.m_filters.begin();
         itr != graph.m_filters.end();
         itr++)
@@ -143,26 +141,26 @@ Workspace::ExecutionPlan::generate(Graph &graph,
         Filter *f = itr->second;
 
         // check for snk
-        if( !f->output_port() || 
+        if( !f->output_port() ||
              graph.edges_out(f->name()).number_of_children() == 0)
         {
             snks.append().set(f->name());
         }
 
         // check for src
-        if( f->output_port() && 
+        if( f->output_port() &&
             !graph.edges()["in"].has_child(f->name()) )
         {
             srcs.append().set(f->name());
         }
-            
-        
+
+
     }
 
     // init tags
     Node tags;
     for(itr  = graph.m_filters.begin();
-        itr != graph.m_filters.end() ; 
+        itr != graph.m_filters.end() ;
         itr++)
     {
         Filter *f = itr->second;
@@ -203,21 +201,21 @@ Workspace::ExecutionPlan::bf_topo_sort_visit(Graph &graph,
     tags[f_name].set_int32(1);
 
     Filter *f = graph.m_filters[f_name];
-    
+
     if(f->output_port())
     {
         int num_refs = graph.edges_out(f_name).number_of_children();
         uref = num_refs > 0 ? num_refs : 1;
     }
-    
+
     if ( f->port_names().number_of_children() > 0 )
     {
         NodeConstIterator f_inputs(&graph.edges_in(f_name));
-        
+
         while(f_inputs.has_next())
         {
             const Node &n_f_input = f_inputs.next();
-            
+
             if(n_f_input.dtype().is_string())
             {
                 std::string f_in_name = n_f_input.as_string();
@@ -228,9 +226,9 @@ Workspace::ExecutionPlan::bf_topo_sort_visit(Graph &graph,
                 index_t port_idx = f_inputs.index();
                 CONDUIT_ERROR("Filter " << f->detailed_name()
                               << " is missing connection to input port "
-                              << port_idx 
+                              << port_idx
                               << " ("
-                              << f->port_index_to_name(port_idx) 
+                              << f->port_index_to_name(port_idx)
                               << ")");
                 uref = 0;
             }
@@ -251,7 +249,10 @@ Workspace::ExecutionPlan::bf_topo_sort_visit(Graph &graph,
 
 //-----------------------------------------------------------------------------
 Workspace::Workspace()
-:m_graph(this)
+:m_graph(this),
+ m_registry(),
+ m_timing_exec_count(0),
+ m_timing_info()
 {
 
 }
@@ -293,24 +294,20 @@ Workspace::registry() const
 
 //-----------------------------------------------------------------------------
 void
-Workspace::traversals(Node &traversals) 
+Workspace::traversals(Node &traversals)
 {
     traversals.reset();
     ExecutionPlan::generate(graph(),traversals);
 }
 
-static int cnt = 0;
-static ofstream *timingInfo = NULL;
-    
 //-----------------------------------------------------------------------------
 void
 Workspace::execute()
 {
+    Timer t_total_exec;
     Node traversals;
     ExecutionPlan::generate(graph(),traversals);
-
-    
-    // execute traversals 
+    // execute traversals
     NodeIterator travs_itr = traversals.children();
 
     while(travs_itr.has_next())
@@ -320,11 +317,11 @@ Workspace::execute()
         while(trav_itr.has_next())
         {
             Node &t = trav_itr.next();
-            
+
             std::string  f_name = trav_itr.name();
             int          uref   = t.to_int32();
             Filter      *f      = graph().filters()[f_name];
-        
+
             f->reset_inputs_and_output();
 
             // fetch inputs from reg, attach to filter's ports
@@ -337,33 +334,15 @@ Workspace::execute()
                 std::string f_input_name = graph().edges_in(f_name)[port_name].as_string();
                 f->set_input(port_name,&registry().fetch(f_input_name));
             }
-            
-            MPI_Comm c_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-            int nRanks, rank;
-            MPI_Comm_size(c_comm, &nRanks);
-            MPI_Comm_rank(c_comm, &rank);
 
-
-            // execute 
-            auto startT = std::chrono::steady_clock::now();
+            Timer t_flt_exec;
+            // execute
             f->execute();
-            auto endT = std::chrono::steady_clock::now();
-            auto diff = endT - startT;
-            auto dt = std::chrono::duration<double, std::milli>(diff).count();
-            /*
-            if (timingInfo == NULL)
-            {
-                timingInfo = new ofstream;
-                char nm[32];
-                sprintf(nm, "timing.%d.out", rank);
-                timingInfo->open(nm, ofstream::out);
-            }
-            (*timingInfo)<<cnt<<", FLOWfilter_"<<rank<<"_"<<nRanks<<", "<<f->name()<<", "<<dt<<endl;
-            */
-            
-//            cout<<cnt<<", FLOWfilter_"<<rank<<"_"<<nRanks<<", "<<f->name()<<", "<<dt<<endl;
-//            cout << "FLOW filter (" << rank << "/"<< nRanks << ") -> " << f->name() << " <- wall time = "  
-//               << std::chrono::duration<double, std::milli>(diff).count() << " ms\n" << endl;
+
+            m_timing_info << m_timing_exec_count
+                          << " " << f->name()
+                          << " " << std::fixed << t_flt_exec.elapsed()
+                          <<"\n";
 
             // if has output, set output
             if(f->output_port())
@@ -377,9 +356,9 @@ Workspace::execute()
                                f->output(),
                                uref);
             }
-            
+
             f->reset_inputs_and_output();
-            
+
             // consume inputs
             ports_itr.to_front();
             while(ports_itr.has_next())
@@ -390,8 +369,15 @@ Workspace::execute()
             }
         }
     }
-    
-    cnt++;
+
+    m_timing_info << m_timing_exec_count
+                  << " [total] "
+                  << std::fixed << t_total_exec.elapsed()
+                  <<"\n";
+
+
+    m_timing_exec_count++;
+
 }
 
 
@@ -409,9 +395,10 @@ void
 Workspace::info(Node &out) const
 {
     out.reset();
-    
+
     graph().info(out["graph"]);
     registry().info(out["registry"]);
+    out["timings"] = timing_info();
 }
 
 
@@ -434,6 +421,20 @@ Workspace::print() const
 }
 
 //-----------------------------------------------------------------------------
+void
+Workspace::reset_timing_info()
+{
+    m_timing_exec_count = 0;
+    m_timing_info.str("");
+}
+//-----------------------------------------------------------------------------
+string
+Workspace::timing_info() const
+{
+    return m_timing_info.str();
+}
+
+//-----------------------------------------------------------------------------
 Filter *
 Workspace::create_filter(const std::string &filter_type_name)
 {
@@ -443,7 +444,7 @@ Workspace::create_filter(const std::string &filter_type_name)
                     << filter_type_name);
         return NULL;
     }
-    
+
     return FilterFactory::registered_types()[filter_type_name](filter_type_name.c_str());
 }
 
@@ -460,7 +461,7 @@ Workspace::default_mpi_comm()
     // we init m_default_mpi_comm to -1, it's not clear if we can
     // pick a safe non-inited value w/o the mpi headers, but
     // we will try this strategy.
-    
+
     if(m_default_mpi_comm == -1)
     {
         CONDUIT_ERROR("flow::Workspace default MPI communicator is not initialized.")
@@ -518,46 +519,46 @@ Workspace::register_filter_type(FilterFactoryMethod fr)
 {
     if(supports_filter_type(fr))
     {
-        // already registered 
+        // already registered
         return;
     }
-    
+
     // obtain type name
-    
+
     // check that filter is valid by creating
     // an instance
     Filter *f = fr("");
-    
+
     // verify f provides proper interface declares
-    
+
     Node i_test;
     Node v_info;
-    
+
     std::string f_type_name = "(type_name missing!)";
-    
+
     f->declare_interface(i_test);
     if(!Filter::verify_interface(i_test,v_info))
     {
-        // if  the type name was provided, that helps improve 
+        // if  the type name was provided, that helps improve
         // the error message, so try to include it
-        if(i_test.has_child("type_name") && 
+        if(i_test.has_child("type_name") &&
            i_test["type_name"].dtype().is_string())
         {
             f_type_name = i_test["type_name"].as_string();
         }
-        
-        // failed interface verify ... 
+
+        // failed interface verify ...
         CONDUIT_ERROR("filter type interface verify failed." << std::endl
                       << f_type_name   << std::endl
                       << "Details:" << std::endl
                       << v_info.to_json());
     }
-        
+
     f_type_name =i_test["type_name"].as_string();
 
     // we no longer need this instance ...
     delete f;
-    
+
     register_filter_type(f_type_name,fr);
 }
 
@@ -570,41 +571,41 @@ Workspace::register_filter_type(const std::string &filter_type_name,
     if(supports_filter_type(filter_type_name))
     {
         CONDUIT_INFO("filter type named:"
-                      << filter_type_name 
+                      << filter_type_name
                       << " is already registered");
         return;
     }
-    
+
     // check that filter is valid by creating
     // an instance
-    
+
     Filter *f = fr(filter_type_name.c_str());
-    
+
     // verify f provides proper interface declares
-    
+
     Node i_test;
     Node v_info;
-    
+
     std::string f_type_name = "(type_name missing!)";
-    
+
     f->declare_interface(i_test);
     if(!Filter::verify_interface(i_test,v_info))
     {
-        // if  the type name was provided, that helps improve 
+        // if  the type name was provided, that helps improve
         // the error message, so try to include it
-        if(i_test.has_child("type_name") && 
+        if(i_test.has_child("type_name") &&
            i_test["type_name"].dtype().is_string())
         {
             f_type_name = i_test["type_name"].as_string();
         }
-        
-        // failed interface verify ... 
+
+        // failed interface verify ...
         CONDUIT_ERROR("filter type interface verify failed." << std::endl
                       << f_type_name   << std::endl
                       << "Details:" << std::endl
                       << v_info.to_json());
     }
-        
+
     f_type_name =i_test["type_name"].as_string();
 
     // we no longer need this instance ...
@@ -613,10 +614,10 @@ Workspace::register_filter_type(const std::string &filter_type_name,
     if(supports_filter_type(f_type_name))
     {
         CONDUIT_ERROR("filter type named:"
-                     << f_type_name 
+                     << f_type_name
                     << " is already registered");
     }
-    
+
     FilterFactory::registered_types()[filter_type_name] = fr;
 }
 
@@ -633,7 +634,3 @@ Workspace::clear_supported_filter_types()
 //-----------------------------------------------------------------------------
 // -- end flow:: --
 //-----------------------------------------------------------------------------
-
-
-
-

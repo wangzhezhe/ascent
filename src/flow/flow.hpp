@@ -70,6 +70,7 @@
 #include <flow_filter.hpp>
 #include <flow_graph.hpp>
 #include <flow_workspace.hpp>
+#include <flow_timer.hpp>
 
 // filters
 #include <flow_filters.hpp>

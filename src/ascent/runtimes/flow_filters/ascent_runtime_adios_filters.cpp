@@ -1,5 +1,5 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
-// Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
+// Copyright (c) 2015-2019, Lawrence Livermore National Security, LLC.
 //
 // Produced at the Lawrence Livermore National Laboratory
 //
@@ -218,7 +218,6 @@ ADIOS::verify_params(const conduit::Node &params,
         res = false;
     }
 
-
     return res;
 }
 
@@ -226,8 +225,6 @@ ADIOS::verify_params(const conduit::Node &params,
 void
 ADIOS::execute()
 {
-    ASCENT_INFO("execute");
-
     if(!input("in").check_type<Node>())
     {
         // error
@@ -255,6 +252,8 @@ ADIOS::execute()
     }
 
     const string groupName = "ascent";
+
+    // get params
     if (transportType == "file")
     {
         //set mpi option based on num ranks, with more ranks we need to aggregate
@@ -345,7 +344,6 @@ ADIOS::execute()
         const Node &coordSet = itr.next();
         std::string coordSetType = coordSet["type"].as_string();
 
-
         if (coordSetType == "uniform")
         {
             UniformMeshSchema(coordSet);
@@ -421,11 +419,11 @@ ADIOS::UniformMeshSchema(const Node &node)
 bool
 ADIOS::CalcExplicitMeshInfo(const conduit::Node &node, vector<vector<double>> &XYZ)
 {
-    const Node &X = node["values/x"];
-    const Node &Y = node["values/y"];
-    const Node &Z = node["values/z"];
     //const Node &topo = node["connectivity"];
     //const double *connectivityPtr = topo.as_float64_ptr();
+    const Node &X = node["x"];
+    const Node &Y = node["y"];
+    const Node &Z = node["z"];
 
     const double *xyzPtr[3] = {X.as_float64_ptr(),
                                Y.as_float64_ptr(),
@@ -702,7 +700,6 @@ ADIOS::RectilinearMeshSchema(const Node &node)
         */
 
         //adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
-
         adios_define_mesh_rectilinear((char*)dimsToStr(globalDims).c_str(),
                                       (char*)(coordNames[0]+","+coordNames[1]+","+coordNames[2]).c_str(),
                                       0,

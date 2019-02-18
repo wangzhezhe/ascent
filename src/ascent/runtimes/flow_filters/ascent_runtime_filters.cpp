@@ -1,5 +1,5 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
-// Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
+// Copyright (c) 2015-2019, Lawrence Livermore National Security, LLC.
 //
 // Produced at the Lawrence Livermore National Laboratory
 //
@@ -50,7 +50,7 @@
 //-----------------------------------------------------------------------------
 
 #include <ascent_runtime_filters.hpp>
-
+#include <ascent_main_runtime.hpp>
 
 //-----------------------------------------------------------------------------
 // ascent includes
@@ -63,6 +63,7 @@
 
 #if defined(ASCENT_VTKM_ENABLED)
     #include <ascent_runtime_vtkh_filters.hpp>
+    #include <ascent_runtime_rover_filters.hpp>
 #endif
 
 #ifdef ASCENT_MPI_ENABLED
@@ -101,46 +102,51 @@ namespace filters
 void
 register_builtin()
 {
-    Workspace::register_filter_type<BlueprintVerify>();
-    Workspace::register_filter_type<RelayIOSave>();
-    Workspace::register_filter_type<RelayIOLoad>();
+    AscentRuntime::register_filter_type<BlueprintVerify>();
+    AscentRuntime::register_filter_type<EnsureLowOrder>();
+    AscentRuntime::register_filter_type<EnsureBlueprint>();
+    AscentRuntime::register_filter_type<RelayIOSave>("extracts","relay");
+    AscentRuntime::register_filter_type<RelayIOLoad>();
 
 #if defined(ASCENT_VTKM_ENABLED)
-    Workspace::register_filter_type<DefaultRender>();
-    Workspace::register_filter_type<EnsureVTKH>();
-    Workspace::register_filter_type<EnsureVTKM>();
-    Workspace::register_filter_type<EnsureBlueprint>();
+    AscentRuntime::register_filter_type<DefaultRender>();
+    AscentRuntime::register_filter_type<EnsureVTKH>();
+    AscentRuntime::register_filter_type<EnsureVTKM>();
 
-    Workspace::register_filter_type<VTKHBounds>();
-    Workspace::register_filter_type<VTKHUnionBounds>();
+    AscentRuntime::register_filter_type<VTKHBounds>();
+    AscentRuntime::register_filter_type<VTKHUnionBounds>();
 
-    Workspace::register_filter_type<VTKHDomainIds>();
-    Workspace::register_filter_type<VTKHUnionDomainIds>();
+    AscentRuntime::register_filter_type<VTKHDomainIds>();
+    AscentRuntime::register_filter_type<VTKHUnionDomainIds>();
 
-    Workspace::register_filter_type<DefaultScene>();
+    AscentRuntime::register_filter_type<DefaultScene>();
 
+    // transforms, the current crop expect vtk-h input data
+    AscentRuntime::register_filter_type<VTKHClip>("transforms","clip");
+    AscentRuntime::register_filter_type<VTKHClipWithField>("transforms","clip_with_field");
+    AscentRuntime::register_filter_type<VTKHIsoVolume>("transforms","isovolume");
+    AscentRuntime::register_filter_type<VTKHLagrangian>("transforms","lagrangian");
+    AscentRuntime::register_filter_type<VTKHLog>("transforms","log");
+    AscentRuntime::register_filter_type<VTKHMarchingCubes>("transforms","contour");
+    AscentRuntime::register_filter_type<VTKHThreshold>("transforms","threshold");
+    AscentRuntime::register_filter_type<VTKHSlice>("transforms","slice");
+    AscentRuntime::register_filter_type<VTKH3Slice>("transforms","3slice");
+    AscentRuntime::register_filter_type<VTKHNoOp>("transforms","noop");
+    AscentRuntime::register_filter_type<VTKHVectorMagnitude>("transforms","vector_magnitude");
+    AscentRuntime::register_filter_type<RoverXRay>("extracts", "xray");
+    AscentRuntime::register_filter_type<RoverVolume>("extracts", "volume");
 
-    Workspace::register_filter_type<VTKHClip>();
-    Workspace::register_filter_type<VTKHClipWithField>();
-    Workspace::register_filter_type<VTKHIsoVolume>();
-    Workspace::register_filter_type<VTKHMarchingCubes>();
-    Workspace::register_filter_type<VTKHThreshold>();
-    Workspace::register_filter_type<VTKHSlice>();
-    Workspace::register_filter_type<VTKH3Slice>();
-    Workspace::register_filter_type<VTKHPointAverage>();
-    Workspace::register_filter_type<VTKHNoOp>();
-
-    Workspace::register_filter_type<AddPlot>();
-    Workspace::register_filter_type<CreatePlot>();
-    Workspace::register_filter_type<CreateScene>();
-    Workspace::register_filter_type<ExecScene>();
+    AscentRuntime::register_filter_type<AddPlot>();
+    AscentRuntime::register_filter_type<CreatePlot>();
+    AscentRuntime::register_filter_type<CreateScene>();
+    AscentRuntime::register_filter_type<ExecScene>();
 #endif
 
 #if defined(ASCENT_MPI_ENABLED)
-    Workspace::register_filter_type<HolaMPIExtract>();
+    AscentRuntime::register_filter_type<HolaMPIExtract>("extracts","hola_mpi");
 
 #if defined(ASCENT_ADIOS_ENABLED)
-    Workspace::register_filter_type<ADIOS>();
+    AscentRuntime::register_filter_type<ADIOS>("extracts","adios");
 #endif
 
 #endif

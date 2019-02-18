@@ -2875,8 +2875,8 @@ int main(int argc, char *argv[])
 
    conduit::Node scenes;
 
-   scenes["s1/plots/p1/type"]         = "pseudocolor";
-   scenes["s1/plots/p1/params/field"] = "e";
+   scenes["s1/plots/p1/type"]  = "pseudocolor";
+   scenes["s1/plots/p1/field"] = "e";
    double vec3[3];
    vec3[0] = -0.6; vec3[1] = -0.6; vec3[2] = -0.8;
    scenes["s1/renders/r1/camera/position"].set_float64_ptr(vec3,3);
@@ -2888,8 +2888,7 @@ int main(int argc, char *argv[])
    conduit::Node &execute = actions.append();
    execute["action"] = "execute";
 
-   conduit::Node reset;
-   conduit::Node &reset_action = reset.append();
+   conduit::Node &reset_action = actions.append();
    reset_action["action"] = "reset";
 
    while((locDom->time() < locDom->stoptime()) && (locDom->cycle() < opts.its)) {
@@ -2912,7 +2911,6 @@ int main(int argc, char *argv[])
             //
             ascent.publish(locDom->visitNode());
             ascent.execute(actions);
-            ascent.execute(reset);
       }
    }
    ascent.close();

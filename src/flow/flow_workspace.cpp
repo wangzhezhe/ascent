@@ -1,5 +1,5 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
-// Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
+// Copyright (c) 2015-2019, Lawrence Livermore National Security, LLC.
 //
 // Produced at the Lawrence Livermore National Laboratory
 //
@@ -11,7 +11,7 @@
 //
 // For details, see: http://ascent.readthedocs.io/.
 //
-// Please also read alpine/LICENSE
+// Please also read ascent/LICENSE
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -326,7 +326,7 @@ Workspace::execute()
 
             // fetch inputs from reg, attach to filter's ports
             NodeConstIterator ports_itr = NodeConstIterator(&f->port_names());
-            registry().print();
+            //registry().print();
             std::vector<std::string> f_i_names;
             while(ports_itr.has_next())
             {
@@ -619,6 +619,32 @@ Workspace::register_filter_type(const std::string &filter_type_name,
     }
 
     FilterFactory::registered_types()[filter_type_name] = fr;
+}
+
+
+//-----------------------------------------------------------------------------
+std::string
+Workspace::filter_type_name(FilterFactoryMethod fr)
+{
+    Filter *f = fr("");
+
+    Node iface;
+    std::string f_type_name = "(type_name missing!)";
+    f->declare_interface(iface);
+    delete f;
+
+    if(iface.has_child("type_name") &&
+       iface["type_name"].dtype().is_string())
+    {
+        f_type_name = iface["type_name"].as_string();
+    }
+
+    if(!supports_filter_type(f_type_name))
+    {
+        // TODO ERROR
+    }
+
+    return f_type_name;
 }
 
 

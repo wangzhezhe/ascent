@@ -1,5 +1,5 @@
 .. ############################################################################
-.. # Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
+.. # Copyright (c) 2015-2019, Lawrence Livermore National Security, LLC.
 .. #
 .. # Produced at the Lawrence Livermore National Laboratory
 .. #
@@ -45,39 +45,46 @@
 
 Example Integrations
 --------------------
-Ascent comes with four example integrations:
+Ascent comes with five example integrations:
 
-  - Lulesh: a lagrangian shock hydrodynamics code 
+  - Lulesh: a lagrangian shock hydrodynamics code
   - Kripke: a deterministic neutron transport code
   - CloverLeaf3D: an eulerian hydrodynamics code
+  - Laghos : high-order finite element hydrodynamics code
   - Noise : an synthetic data source based on open simplex noise
 
 .. note::
-  All four example codes use both MPI and OpenMP for hybrid parallelism.
+  All example codes, except Laghos (MPI only), use both MPI and OpenMP for hybrid parallelism.
 
 Lulesh
 ^^^^^^
 
-Lulesh is a proxy-application for LLNL's production ALE3D code. 
-Lulesh in programmed in C++ and uses an unstructured mesh. 
+Lulesh is a proxy-application for LLNL's production ALE3D code that models the Sedov blast problem.
+Lulesh in programmed in C++ and uses an structured mesh with an explicit coordinate system (curvilinear).
 More information about Lulesh can be found at `https://codesign.llnl.gov/lulesh.php <https://codesign.llnl.gov/lulesh.php>`_.
 
 The Ascent integration can be found in two locations.
 Lulesh's mesh description can be found at line 189 in ``/src/examples/proxies/lulesh2.0.3/lulesh-init.cc``, and the Ascent API usage can be found in the simulations main loop beginning at line 2769 in the file ``/src/examples/proxies/lulesh2.0.3/lulesh.cc``.
 
+.. _lulesh_exfig:
+
+..  figure:: images/lulesh_example.png
+    :scale: 50 %
+    :align: center
+
 Running Lulesh
 """"""""""""""
 Ascent will create two versions of lulesh, one serial and one MPI parallel, but both versions are capable of using OpenMP.
 Lulesh takes several command line arguments, but the most useful are:
-  
+
   - ``-p`` prints the progress of the solver as the simulation progresses
-  - ``-i {number of iterations}`` how many iterations to run the simulation. Note: this is not a guarantee, since Lulesh has other termination criteria.  
+  - ``-i {number of iterations}`` how many iterations to run the simulation. Note: this is not a guarantee, since Lulesh has other termination criteria.
   - ``-s {per node problem size}`` defines the problem size to run on each node. The larger the value, the longer the times steps will be take to calculate
 
 .. note::
   When running lulesh in parallel, the number of MPI processes must be a perfect cube. For example, some valid numbers of MPI tasks would be 1, 2, 8, and 27.
 
-The command below would launch Lulesh for 10 iterations with a problem size of 32^3 zones per node (8*32^3 = 262,144 total zones):
+The command below would launch Lulesh for 10 iterations with a problem size of 32^3 elements per node (8*32^3 = 262,144 total elements):
 
 .. code-block:: bash
 
@@ -91,7 +98,15 @@ CloverLeaf3D
 CloverLeaf3D is a proxy-application from the Atomic Weapons Establishment (AWE) that can be found at `http://uk-mac.github.io/CloverLeaf3D <http://uk-mac.github.io/CloverLeaf3D>`_.
 CloverLeaf is written in Fortran90.
 The data integration can be found in the file ``src/examples/proxies/cloverleaf3d-ref/visit.F90``, and the Ascent API in the main loop can be found at ``src/examples/proxies/cloverleaf3d-ref/hydro.F90`` starting at line 46.
-CloverLeaf3D uses ghost zones, thus they have to be stripped each time step before being passed to Ascent.
+CloverLeaf3D uses ghost elements, thus they have to be stripped each time step before being passed to Ascent.
+
+.. _clover_exfig:
+
+..  figure:: images/clover_example.png
+    :scale: 50 %
+    :align: center
+
+    A volume plot of the CloverLeaf3D.
 
 Running CloverLeaf3D
 """"""""""""""""""""
@@ -139,6 +154,14 @@ Kripke is meant to study the efficiency of different loop orderings and memory l
 Thus, the data is extracted each iteration.
 Mesh data extraction can be found starting at line 20, and the API calls can be found at line 101.
 
+.. _kripke_exfig:
+
+..  figure:: images/kripke_example.png
+    :scale: 50 %
+    :align: center
+
+    A combined rendering of a clipped pseudocolor plot with a volume plot of the Kripke simulation.
+
 Running Kripke
 """"""""""""""
 Kripke takes many command line parameters, and there is an example script that is copied into the directory where Kripke is built.
@@ -150,16 +173,71 @@ Kripke takes many command line parameters, and there is an example script that i
 The parameters that control the problem size and layout are:
 
   - ``--procs`` controls the layout of the MPI processes over the mesh. In the example, we launch 8 total MPI tasks and distribute them evenly in each coordinate direction. The cross product of this argument must equal the number of MPI tasks, e.g. 2x2x2 = 8. Another valid value for 8 MPI tasks is ``1,1,8``.
-  - ``--zones`` controls the number of zones in each coordinate direction of the problem mesh. In this case, the total mesh size is 32^3, and the number of zones for each MPI task will be 16^3. This is simple zones / procs, e.g. 32/2, 32/2, 32/2.
+  - ``--zones`` controls the number of elements(zones) in each coordinate direction of the problem mesh. In this case, the total mesh size is 32^3, and the number of elements for each MPI task will be 16^3. This is simply  elements / procs, e.g. 32/2, 32/2, 32/2.
   - ``--niter`` controls the number of iterations. Note: as the solver converges on a solution, the images will differ less and less.
-  
+
+
+Laghos
+^^^^^^
+Laghos is a high-order lagrangian hydrodynamics proxy-application based on the MFEM finite element library.
+Laghos models three problems in both 3D and 3D: Sedov blast, tripple-point, and taylor-green vortex, and the integration can be found in ``src/examples/proxies/laghos/laghos.cpp``.
+All three problems produce unstructured grids.
+
+.. _tripple_exfig:
+
+..  figure:: images/tripple_example.png
+    :scale: 50 %
+    :align: center
+
+    2D simulation of the tripple-point problem.
+
+.. _taylor_exfig:
+
+..  figure:: images/taylor_example.png
+    :scale: 50 %
+    :align: center
+
+    2D simulation of the taylor-green vortex.
+
+.. _sedov_exfig:
+
+..  figure:: images/sedov_example.png
+    :scale: 50 %
+    :align: center
+
+    2D simulation of the Sedov blast problem.
+
+Running Laghos
+""""""""""""""
+In the Laghos example directory, we provide scripts for running the different problem variants.
+We also provide both MPI parallel and serial versions of the application.
+More information about running Laghos can be found on the `Laghos github page <https://github.com/CEED/Laghos>`_,
+but the basic parameters are:
+
+  - ``-p``: problem setup
+  - ``-rs``: number of times to refine the mesh (i.e., the higher the number the more elements will be generated)
+  - ``-m``: mesh file
+  - ``--visit``: enable Ascent visualization
+  - ``-tf`` : run the simulation until this time has been reached
+
+.. code-block:: bash
+
+  ./laghos_ser -p 0 -m data/cube01_hex.mesh -rs 1 -tf 0.5 --visit
 
 Noise
 ^^^^^^
 Noise is a scalable synthetic application that generates data throughout the entire problem from the first time step.
 For large data sets, proxy applications such as Lulesh and Cloverleaf3D require significant time for shockwaves to propagate through a distributed data set, and Noise allows large scale distributed-memory testing from the first time step without having to wait for a simulation to progress. Noise uses a uniform grid and defines two fields (node centered and node centered) that are based on open simplex noise.
 
-Running Noise 
+.. _noise_exfig:
+
+..  figure:: images/noise_example.png
+    :scale: 50 %
+    :align: center
+
+    The noise synthetic proxy-application rendered with pseudocolor and volume plots.
+
+Running Noise
 """"""""""""""
 Noise takes several command line parameters.
 
@@ -172,4 +250,4 @@ The parameters that control the problem size and cycle progression are:
   - ``--dims`` controls total problem size.
   - ``--time_steps`` controls the number of time steps.
   - ``--time_delta`` controls the amount of time to advance the simulation each time step.
-  
+

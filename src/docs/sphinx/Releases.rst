@@ -45,10 +45,25 @@
 Releases
 ========
 
+Ascent and its dependencies are under rapid development.
+Because of this we recommend using our develop branch, which we aim 
+to keep buildable via continuous integration testing. See our 
+:doc:`Quick Start Guide <QuickStart>` for info on how to build Ascent and 
+its dependencies.
+
+
+
 Source distributions for Ascent are hosted on github:
 
 https://github.com/Alpine-DAV/ascent/releases
 
+v0.4.0
+-------
+
+The fourth release of Ascent.
+
+* `v0.4.0 Source Tarball <https://github.com/Alpine-DAV/ascent/releases>`_
+  
 v0.3.0
 -------
 

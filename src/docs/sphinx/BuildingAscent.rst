@@ -1,5 +1,5 @@
 .. ############################################################################
-.. # Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
+.. # Copyright (c) 2015-2019, Lawrence Livermore National Security, LLC.
 .. #
 .. # Produced at the Lawrence Livermore National Laboratory
 .. #
@@ -42,13 +42,21 @@
 .. #
 .. ############################################################################
 
+.. _building:
 
 Building Ascent
 =================
 
+This page provides details on several ways to build Ascent from source.
+
+For the shortest path from zero to Ascent, see :doc:`QuickStart`.
+
+To build third party dependencies we recommend using :ref:`uberenv <building_with_uberenv>` which leverages Spack or :ref:`Spack directly<building_with_spack>`. 
+We also provide info about :ref:`building for known HPC clusters using uberenv <building_known_hpc>`.
+and a :ref:`Docker example <building_with_docker>` that leverages Spack.
+
 Overview
 --------
-
 
 Ascent uses CMake for its build system.
 Building Ascent creates two separate libraries:
@@ -60,48 +68,63 @@ The CMake variable( ENABLE_MPI ON | OFF ) controls the building the parallel ver
 
 The build dependencies vary according to which pipelines and proxy-applications are desired.
 For a minimal build with no parallel components, the following are required:
-    
+
     * Conduit
     * C++ compilers
+
+We recognize that building on HPC systems can be difficult, and we have provide two separate build strategies.
+
+    * A spack based build
+    * Manually compile decencies using a CMake configuration file to keep compilers and libraries consistent
+
+Most often, the spack based build should be attempted first. Spack will automatically download and build all
+the third party dependencies and create a CMake configuration file for Ascent. Should you encounter build issues
+that are not addressed here, please ask questions using our github `issue tracker <https://github.com/Alpine-DAV/ascent/issues>`_.
 
 
 Build Dependencies
 ------------------
 
 ..  image:: images/AscentDependencies.png
-    :height: 600px
+    :width: 85%
     :align: center
 
 Ascent
 ^^^^^^^^
 
   * Conduit
-  * One or more runtimes 
+  * One or more runtimes
 
 For Ascent, the Flow runtime is builtin, but for visualization functionality (filters and rendering), the VTK-h runtime is needed.
 
-Conduit
-"""""""
+Conduit (Required)
+""""""""""""""""""
   * MPI
   * Python + NumPy (Optional)
   * HDF5 (Optional)
   * Fortran compiler (Optional)
 
-VTK-h
-"""""""""
+VTK-h (Optional)
+""""""""""""""""
 
-* VTK-h: 
-  
-    * VTK-m: 
+* VTK-h:
 
-      * TBB (Optional)  Intel's Threaded Building Blocks
-      * CUDA 6.5+ (Optional)
+    * VTK-m:
+
+      * OpenMP (Optional)
+      * CUDA 7.5+ (Optional)
       * MPI (Optional)
 
-.. note:: 
+.. note::
 
     When building VTK-m for use with VTK-h, VTK-m must be configured with rendering on, among other options.
-    See the VTK-h spack package for details. 
+    See the VTK-h spack package for details.
+
+MFEM (Optional)
+"""""""""""""""
+  * MPI
+  * Metis
+  * Hypre
 
 Getting Started
 ---------------
@@ -110,15 +133,15 @@ Clone the Ascent repo:
 * From Github
 
 .. code:: bash
-    
+
     git clone --recursive https://github.com/Alpine-DAV/ascent.git
 
 
-``--recursive`` is necessary because we are using a git submodule to pull in BLT (https://github.com/llnl/blt). 
+``--recursive`` is necessary because we are using a git submodule to pull in BLT (https://github.com/llnl/blt).
 If you cloned without ``--recursive``, you can checkout this submodule using:
 
 .. code:: bash
-    
+
     cd ascent
     git submodule init
     git submodule update
@@ -127,13 +150,13 @@ If you cloned without ``--recursive``, you can checkout this submodule using:
 
 Configure a build:
 
-``config-build.sh`` is a simple wrapper for the cmake call to configure ascent. 
+``config-build.sh`` is a simple wrapper for the cmake call to configure ascent.
 This creates a new out-of-source build directory ``build-debug`` and a directory for the install ``install-debug``.
-It optionally includes a ``host-config.cmake`` file with detailed configuration options. 
+It optionally includes a ``host-config.cmake`` file with detailed configuration options.
 
 
 .. code:: bash
-    
+
     cd ascent
     ./config-build.sh
 
@@ -141,7 +164,7 @@ It optionally includes a ``host-config.cmake`` file with detailed configuration 
 Build, test, and install Ascent:
 
 .. code:: bash
-    
+
     cd build-debug
     make -j 8
     make test
@@ -154,8 +177,8 @@ Build Options
 
 Ascent's build system supports the following CMake options:
 
-* **BUILD_SHARED_LIBS** - Controls if shared (ON) or static (OFF) libraries are built. *(default = ON)* 
-* **ENABLE_TESTS** - Controls if unit tests are built. *(default = ON)* 
+* **BUILD_SHARED_LIBS** - Controls if shared (ON) or static (OFF) libraries are built. *(default = ON)*
+* **ENABLE_TESTS** - Controls if unit tests are built. *(default = ON)*
 
 * **ENABLE_DOCS** - Controls if the Ascent documentation is built (when sphinx and doxygen are found ). *(default = ON)*
 
@@ -173,16 +196,18 @@ Ascent's build system supports the following CMake options:
  To run the mpi unit tests on LLNL's LC platforms, you may also need change the CMake variables **MPIEXEC** and **MPIEXEC_NUMPROC_FLAG**, so you can use srun and select a partition. (for an example see: src/host-configs/chaos_5_x86_64.cmake)
 
 .. warning::
-  Starting in CMake 3.10, the FindMPI **MPIEXEC** variable was changed to **MPIEXEC_EXECUTABLE**. FindMPI will still set **MPIEXEC**, but any attempt to change it before calling FindMPI with your own cached value of **MPIEXEC** will not survive, so you need to set **MPIEXEC_EXECUTABLE** `[reference] <https://cmake.org/cmake/help/v3.10/module/FindMPI.html>`_. 
+  Starting in CMake 3.10, the FindMPI **MPIEXEC** variable was changed to **MPIEXEC_EXECUTABLE**. FindMPI will still set **MPIEXEC**, but any attempt to change it before calling FindMPI with your own cached value of **MPIEXEC** will not survive, so you need to set **MPIEXEC_EXECUTABLE** `[reference] <https://cmake.org/cmake/help/v3.10/module/FindMPI.html>`_.
 
 
-* **CONDUIT_DIR** - Path to an Conduit install *(required for parallel version)*. 
+* **CONDUIT_DIR** - Path to an Conduit install *(required for parallel version)*.
 
-* **VTKM_DIR** - Path to an VTK-m install *(optional)*. 
+* **VTKM_DIR** - Path to an VTK-m install *(optional)*.
 
-* **HDF5_DIR** - Path to a HDF5 install *(optional)*. 
+* **HDF5_DIR** - Path to a HDF5 install *(optional)*.
 
-* **ADIOS_DIR** - Path to a ADIOS install *(optional)*. 
+* **MFEM_DIR** - Path to a MFEM install *(optional)*.
+
+* **ADIOS_DIR** - Path to a ADIOS install *(optional)*.
 
 * **BLT_SOURCE_DIR** - Path to BLT.  *(default = "blt")*
 
@@ -190,24 +215,24 @@ Ascent's build system supports the following CMake options:
 
 Host Config Files
 -----------------
-To handle build options, third party library paths, etc we rely on CMake's initial-cache file mechanism. 
+To handle build options, third party library paths, etc we rely on CMake's initial-cache file mechanism.
 
 
 .. code:: bash
-    
+
     cmake -C config_file.cmake
 
 
-We call these initial-cache files *host-config* files, since we typically create a file for each platform or specific hosts if necessary. 
+We call these initial-cache files *host-config* files, since we typically create a file for each platform or specific hosts if necessary.
 
 The ``config-build.sh`` script uses your machine's hostname, the SYS_TYPE environment variable, and your platform name (via *uname*) to look for an existing host config file in the ``host-configs`` directory at the root of the ascent repo. If found, it passes the host config file to CMake via the `-C` command line option.
 
 .. code:: bash
-    
+
     cmake {other options} -C host-configs/{config_file}.cmake ../
 
 
-You can find example files in the ``host-configs`` directory. 
+You can find example files in the ``host-configs`` directory.
 
 These files use standard CMake commands. CMake *set* commands need to specify the root cache path as follows:
 
@@ -220,27 +245,140 @@ It is  possible to create your own configure file, and an boilerplate example is
 .. warning:: If compiling all of the dependencies yourself, it is important that you use the same compilers for all dependencies. For
              example, different MPI and Fortran compilers (e.g., Intel and GCC) are not compatible with one another.
 
-Bootstrapping Third Party Dependencies 
---------------------------------------
 
-You can use ``bootstrap-env.sh`` (located at the root of the ascent repo) to help setup your development environment on OSX and Linux. 
-This script uses ``scripts/uberenv/uberenv.py``, which leverages **Spack** (https://spack.io/) to build the external third party libraries and tools used by Ascent. 
-Fortran support in is optional, dependencies should build without fortran. 
+.. _building_with_uberenv:
+
+Building Ascent and Third Party Dependencies
+--------------------------------------------------
+We use **Spack** (http://spack.io) to help build Ascent's third party dependencies on OSX and Linux.
+
+Uberenv (``scripts/uberenv/uberenv.py``) automates fetching spack, building and installing third party dependencies, and can optionally install Ascent as well.  To automate the full install process, Uberenv uses the Ascent Spack package along with extra settings such as Spack compiler and external third party package details for common HPC platforms.
+
+
+Uberenv Options for Building Third Party Dependencies
+------------------------------------------------------
+
+``uberenv.py`` has a few options that allow you to control how dependencies are built:
+
+ ==================== ============================================== ================================================
+  Option               Description                                     Default
+ ==================== ============================================== ================================================
+  --prefix             Destination directory                          ``uberenv_libs``
+  --spec               Spack spec                                     linux: **%gcc**
+                                                                      osx: **%clang**
+  --spack-config-dir   Folder with Spack settings files               linux: (empty)
+                                                                      osx: ``scripts/uberenv/spack_configs/darwin/``
+  -k                   Ignore SSL Errors                              **False**
+  --install            Fully install conduit, not just dependencies   **False**
+  --run_tests          Invoke tests during build and against install  **False** 
+ ==================== ============================================== ================================================
+
+The ``-k`` option exists for sites where SSL certificate interception undermines fetching
+from github and https hosted source tarballs. When enabled, ``uberenv.py`` clones spack using:
+
+.. code:: bash
+
+    git -c http.sslVerify=false clone https://github.com/llnl/spack.git
+
+And passes ``-k`` to any spack commands that may fetch via https.
+
+
+Default invocation on Linux:
+
+.. code:: bash
+
+    python scripts/uberenv/uberenv.py --prefix uberenv_libs \
+                                      --spec %gcc 
+
+Default invocation on OSX:
+
+.. code:: bash
+
+    python scripts/uberenv/uberenv.py --prefix uberenv_libs \
+                                      --spec %clang \
+                                      --spack-config-dir scripts/uberenv/spack_configs/darwin/
+
+
+The uberenv `--install` installs conduit\@master (not just the development dependencies):
+
+.. code:: bash
+
+    python scripts/uberenv/uberenv.py --install
+
+
+To run tests during the build process to validate the build and install, you can use the ``--run_tests`` option:
+
+.. code:: bash
+
+    python scripts/uberenv/uberenv.py --install \
+                                      --run_tests
+
+For details on Spack's spec syntax, see the `Spack Specs & dependencies <http://spack.readthedocs.io/en/latest/basic_usage.html#specs-dependencies>`_ documentation.
+
+ 
+Compiler Settings for Third Party Dependencies
+----------------------------------------------
+
+You can edit yaml files under ``scripts/uberenv/spack_config/{platform}`` or use the **--spack-config-dir** option to specify a directory with compiler and packages yaml files to use with Spack. See the `Spack Compiler Configuration <http://spack.readthedocs.io/en/latest/getting_started.html#manual-compiler-configuration>`_
+and `Spack System Packages
+<http://spack.readthedocs.io/en/latest/getting_started.html#system-packages>`_
+documentation for details.
+
+For OSX, the defaults in ``spack_configs/darwin/compilers.yaml`` are X-Code's clang and gfortran from https://gcc.gnu.org/wiki/GFortranBinaries#MacOS. 
+
+.. note::
+    The bootstrapping process ignores ``~/.spack/compilers.yaml`` to avoid conflicts
+    and surprises from a user's specific Spack settings on HPC platforms.
+
+When run, ``uberenv.py`` checkouts a specific version of Spack from github as ``spack`` in the 
+destination directory. It then uses Spack to build and install Conduit's dependencies into 
+``spack/opt/spack/``. Finally, it generates a host-config file ``{hostname}.cmake`` in the 
+destination directory that specifies the compiler settings and paths to all of the dependencies.
+
+
+.. _building_known_hpc:
+
+Building with Uberenv on Known HPC Platforms 
+--------------------------------------------------
+
+To support testing and installing on common platforms, we maintain sets of Spack compiler and package settings
+for a few known HPC platforms.  Here are the commonly tested configurations:
+
+ ================== ====================== ======================================
+  System             OS                     Tested Configurations (Spack Specs)
+ ================== ====================== ======================================
+  pascal.llnl.gov     Linux: TOSS3          %gcc
+                                            
+                                            %gcc~shared
+  lassen.llnl.gov     Linux: BlueOS         %clang\@coral~python~fortran
+  cori.nersc.gov      Linux: SUSE / CNL     %gcc
+ ================== ====================== ======================================
+
+
+See ``scripts/spack_build_tests/`` for the exact invocations used to test on these platforms.
+
+
+Building Third Party Dependencies for Development
+--------------------------------------------------
+
+You can use ``bootstrap-env.sh`` (located at the root of the ascent repo) to help setup your development environment on OSX and Linux.
+This script uses ``scripts/uberenv/uberenv.py``, which leverages **Spack** (https://spack.io/) to build the external third party libraries and tools used by Ascent.
+Fortran support in is optional, dependencies should build without fortran.
 After building these libraries and tools, it writes an initial *host-config* file and adds the Spack built CMake binary to your PATH, so can immediately call the ``config-build.sh`` helper script to configure a ascent build.
 
 .. code:: bash
-    
+
     #build third party libs using spack
     source bootstrap-env.sh
-    
+
     #copy the generated host-config file into the standard location
     cp uberenv_libs/`hostname`*.cmake host-configs/
-    
+
     # run the configure helper script
     ./config-build.sh
 
-    # or you can run the configure helper script and give it the 
-    # path to a host-config file 
+    # or you can run the configure helper script and give it the
+    # path to a host-config file
     ./config-build.sh uberenv_libs/`hostname`*.cmake
 
 
@@ -248,24 +386,6 @@ After building these libraries and tools, it writes an initial *host-config* fil
 ..     There is a known issue on some OSX systems when building with Fortran dependencies.
 ..     This is caused by the native compilers being 64-bit while the Fortran compiler is 32-bit.
 
-Compiler Settings for Third Party Dependencies 
-----------------------------------------------
-You can edit ``scripts/uberenv/compilers.yaml`` to change the compiler settings
-passed to Spack. See the `Spack Compiler Configuration <http://spack.readthedocs.io/en/latest/getting_started.html#compiler-configuration>`_
-documentation for details.
-
-For OSX, the defaults in ``compilers.yaml`` are clang from X-Code and gfortran from https://gcc.gnu.org/wiki/GFortranBinaries#MacOS. 
-
-.. note::
-    The bootstrapping process ignores ``~/.spack/compilers.yaml`` to avoid conflicts
-    and surprises from a user's specific Spack settings on HPC platforms.
-
-.. note::
-  Ascent developers use ``scripts/uberenv/uberenv.py`` to setup third party libraries for Ascent 
-  development.  Due to this, the process builds more libraries than necessary for most use cases.
-  For example, we build independent installs of Python 2 and Python 3 to make it easy 
-  to check Python C-API compatibility during development. In the near future, we plan to 
-  provide a Spack package to simplify deployment.
 
 .. _building_with_spack:
 
@@ -273,24 +393,24 @@ Building with Spack
 -------------------
 
 As of 11/10/2017,  Spack's develop branch includes a
-`recipe <https://github.com/spack/spack/blob/develop/var/spack/repos/builtin/packages/ascent/package.py>`_ 
-to build and install Ascent. 
+`recipe <https://github.com/spack/spack/blob/develop/var/spack/repos/builtin/packages/ascent/package.py>`_
+to build and install Ascent.
 
 To install Ascent with all options (and also build all of its dependencies as necessary) run:
 
 .. code:: bash
-  
+
   spack install ascent
 
 To build and install Ascent with CUDA support:
-  
+
 .. code:: bash
-  
+
   spack install ascent+cuda
 
 
-The Ascent Spack package provides several 
-`variants <http://spack.readthedocs.io/en/latest/basic_usage.html#specs-dependencies>`_ 
+The Ascent Spack package provides several
+`variants <http://spack.readthedocs.io/en/latest/basic_usage.html#specs-dependencies>`_
 that customize the options and dependencies used to build Ascent:
 
  ================== ==================================== ======================================
@@ -304,6 +424,7 @@ that customize the options and dependencies used to build Ascent:
   **tbb**             Enable VTK-h TBB support             ON (+tbb)
   **cuda**            Enable VTK-h CUDA support            OFF (~cuda)
   **doc**             Build Ascent's Documentation         OFF (~doc)
+  **doc**             Enable MFEM support                  OFF (~mfem)
  ================== ==================================== ======================================
 
 
@@ -332,7 +453,7 @@ Here is an example specifying system CUDA on MacOS:
   # CUDA standard MacOS install
     cuda:
       paths:
-        cuda@8.0: /Developer/NVIDIA/CUDA-8.0
+        cuda@9.0: /Developer/NVIDIA/CUDA-9.0
     buildable: False
 
 
@@ -340,29 +461,33 @@ Here is an example of specifying system MPI and CUDA on an LLNL Chaos 5 machine:
 
 .. code:: yaml
 
-  # LLNL chaos5 CUDA 
-    cuda:
-      paths:
-        cuda@8.0: /opt/cudatoolkit-8.0
-      buildable: False
-  # LLNL chaos5 mvapich for gcc
-    mvapich2:
-      paths:
-        mvapich2@2: /usr/local/tools/mvapich2-gnu-2.0/
-      buildable: False
+    # LLNL toss3 CUDA 
+      cuda:
+        modules:
+           cuda@9.1: cuda/9.1.85
+        buildable: False
+    # LLNL toss3 mvapich2
+      mvapich2:
+        paths:
+          mvapich2@2.2%gcc@4.9.3:  /usr/tce/packages/mvapich2/mvapich2-2.2-gcc-4.9.3
+          mvapich2@2.2%intel@17.0.0: /usr/tce/packages/mvapich2/mvapich2-2.2-intel-17.0.0
+          mvapich2@2.2%clang@4.0.0: /usr/tce/packages/mvapich2/mvapich2-2.2-clang-4.0.0
+        buildable: False
 
-Settings for GCC 4.9.3 on LLNL Chaos 5 Systems:
- * :download:`compilers.yaml <spack_configs/chaos_5_x86_64_ib/compilers.yaml>`
- * :download:`packages.yaml <spack_configs/chaos_5_x86_64_ib/packages.yaml>`
+Settings for LLNL TOSS 3 Systems:
+ * :download:`compilers.yaml <spack_configs/toss_3_x86_64_ib/compilers.yaml>`
+ * :download:`packages.yaml <spack_configs/toss_3_x86_64_ib/packages.yaml>`
 
 
 Using Ascent in Another Project
 ---------------------------------
 
-Under ``src/examples`` there are examples demonstrating how to use Ascent in a CMake-based build system (``using-with-cmake``) and via a Makefile (``using-with-make``). 
+Under ``src/examples`` there are examples demonstrating how to use Ascent in a CMake-based build system (``using-with-cmake``) and via a Makefile (``using-with-make``).
 Under ``src/examples/proxies``  you can find example integrations using ascent in the Lulesh, Kripke, and Cloverleaf3D proxy-applications.
 In ``src/examples/synthetic/noise`` you can find an example integration using our synthetic smooth noise application.
 
+
+.. _building_with_docker:
 
 Building Ascent in a Docker Container
 ---------------------------------------
@@ -372,8 +497,8 @@ Under ``src/examples/docker/master/ubuntu`` there is an example ``Dockerfile`` w
 Building Ascent Dependencies Manually
 -------------------------------------
 
-In some environments, a spack build of Ascents dependencies can fail or a user may prefer to build the dependencies manually. 
-This section describes how to build Ascents components. 
+In some environments, a spack build of Ascents dependencies can fail or a user may prefer to build the dependencies manually.
+This section describes how to build Ascents components.
 When building Ascents dependencies, it is **highly** recommended to fill out a host config file like the one located in ``/host-configs/boilerplate.cmake``.
 This is the best way to avoid problems that can easily arise from mixing c++ standard libraries conflicts, MPI library conflicts, and fortran module conflicts, all of which are difficult to spot.
 Use the same CMake host-config file for each of Ascent's dependencies, and while this may bring in unused cmake variables and clutter the ccmake curses interface, it will help avoid problems.
@@ -386,10 +511,10 @@ The `HDF5 source tarball <https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.
 Once you have built and installed HDF5 into a local directory, add the location of that directory to the declaration of the ``HDF5_DIR`` in the host config file.
 
 .. code:: bash
-    
+
     curl https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.8/hdf5-1.8.16/src/hdf5-1.8.16.tar.gz > hdf5.tar.gz
     tar -xzf hdf5.tar.gz
-    cd hdf5-1.8.16/ 
+    cd hdf5-1.8.16/
     mkdir build
     mkdir install
     cd build
@@ -401,40 +526,40 @@ In the host config, add ``set(HDF5_DIR "/path/to/hdf5_install" CACHE PATH "")``.
 
 Conduit
 ^^^^^^^
-The version of conduit we use is `v0.3.1`. If the ``HDF5_DIR`` is specified in the host config, 
-then conduit will build the relay io library. 
-Likewise, if the config file has the entry ``ENABLE_MPI=ON``, then conduit will build 
-parallel versions of the libraries. 
-Once you have installed conduit, add the path to the install directory to your host 
+The version of conduit we use is the master branch. If the ``HDF5_DIR`` is specified in the host config,
+then conduit will build the relay io library.
+Likewise, if the config file has the entry ``ENABLE_MPI=ON``, then conduit will build
+parallel versions of the libraries.
+Once you have installed conduit, add the path to the install directory to your host
 config file in the cmake variable ``CONDUIT_DIR``.
 
 .. code:: bash
-    
+
     git clone --recursive https://github.com/LLNL/conduit.git
     cd conduit
     git checkout tags/v0.3.1
     mkdir build
     mkdir install
     cd build
-    cmake -C path_to_host_config/myhost_config.cmake ../src \ 
+    cmake -C path_to_host_config/myhost_config.cmake ../src \
       -DCMAKE_INSTALL_PREFIX=path_to_install -DCMAKE_BUILD_TYPE=Release
-    make install 
+    make install
 
 In the host config, add ``set(CONDUIT_DIR "/path/to/conduit_install" CACHE PATH "")``.
 
 VTK-m (Optional but recommended)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-We currently use the master branch of VTK-m, but in the future, we will checkout a specific commit or release for stability. 
+We currently use the master branch of VTK-m, but in the future, we will checkout a specific commit or release for stability.
 We recommend VTK-m since VTK-m and VTK-h provide the majority of Ascent's visualization and analysis functionality.
-The code below is minimal, and will only configure the serial device adapter. For instructions on building with TBB and CUDA, please consult the 
+The code below is minimal, and will only configure the serial device adapter. For instructions on building with TBB and CUDA, please consult the
 `VTK-m repository <https://gitlab.kitware.com/vtk/vtk-m>`_. In Ascent, we require non-default configure options, so pay close attention to the extra cmake configure options.
 
 .. code:: bash
-    
-    git clone https://gitlab.kitware.com/vtk/vtk-m.git 
-    cd vtk-m 
+
+    git clone https://gitlab.kitware.com/vtk/vtk-m.git
+    cd vtk-m
     mkdir install
-    cmake -C path_to_host_config/myhost_config.cmake . -DCMAKE_INSTALL_PREFIX=path_to_install \ 
+    cmake -C path_to_host_config/myhost_config.cmake . -DCMAKE_INSTALL_PREFIX=path_to_install \
       -DCMAKE_BUILD_TYPE=Release -DVTKm_USE_64BIT_IDS=OFF -DVTKm_USE_DOUBLE_PRECISION=ON
     make install
 
@@ -446,13 +571,13 @@ VTK-h (Optional but recommended)
 We recommend VTK-h since VTK-m and VTK-h provide the majority of Ascent's visualization and analysis functionality.
 
 .. code:: bash
-    
-    git clone ://github.com/Alpine-DAV/vtk-h.git 
-    cd vtk-h 
+
+    git clone https://github.com/Alpine-DAV/vtk-h.git
+    cd vtk-h
     mkdir build
     mkdir install
     cd build
-    cmake -C path_to_host_config/myhost_config.cmake . -DCMAKE_INSTALL_PREFIX=path_to_install  
+    cmake -C path_to_host_config/myhost_config.cmake . -DCMAKE_INSTALL_PREFIX=path_to_install
     make install
 
 
@@ -463,16 +588,60 @@ Ascent
 Now that we have all the dependencies built and a host config file for our environment, we can now build Ascent.
 
 .. code:: bash
-    
-    git clone --recursive https://github.com/Alpine-DAV/ascent.git 
-    cd ascent 
+
+    git clone --recursive https://github.com/Alpine-DAV/ascent.git
+    cd ascent
     mkdir build
     mkdir install
     cd build
-    cmake -C path_to_host_config/myhost_config.cmake . -DCMAKE_INSTALL_PREFIX=path_to_install \ 
-      -DCMAKE_BUILD_TYPE=Release 
+    cmake -C path_to_host_config/myhost_config.cmake . -DCMAKE_INSTALL_PREFIX=path_to_install \
+      -DCMAKE_BUILD_TYPE=Release
     make install
-    
-To run the unit tests to make sure everything works, do ``make test``. 
-If you install these dependencies in a public place in your environment, we encourage you to make you host config publicly available by submitting a pull request to the Ascent repo. 
+
+To run the unit tests to make sure everything works, do ``make test``.
+If you install these dependencies in a public place in your environment, we encourage you to make you host config publicly available by submitting a pull request to the Ascent repo.
 This will allow others to easily build on that system by only following the Ascent build instructions.
+
+Asking Ascent how its configured
+--------------------------------
+Once built, Ascent has a number of unit tests. ``t_ascent_smoke``, located in the ``tests/ascent`` directory will print Ascent's
+build configuration:
+
+.. code-block:: json
+
+	{
+		"version": "0.4.0",
+		"compilers":
+		{
+			"cpp": "/usr/tce/packages/gcc/gcc-4.9.3/bin/g++",
+			"fortran": "/usr/tce/packages/gcc/gcc-4.9.3/bin/gfortran"
+		},
+		"platform": "linux",
+		"system": "Linux-3.10.0-862.6.3.1chaos.ch6.x86_64",
+		"install_prefix": "/usr/local",
+		"mpi": "disabled",
+		"runtimes":
+		{
+			"ascent":
+			{
+				"status": "enabled",
+				"vtkm":
+				{
+					"status": "enabled",
+					"backends":
+					{
+						"serial": "enabled",
+						"openmp": "enabled",
+						"cuda": "disabled"
+					}
+				}
+			},
+			"flow":
+			{
+				"status": "enabled"
+			}
+		},
+		"default_runtime": "ascent"
+	}
+
+In this case, the non-MPI version of Ascent was used, so MPI reportsa as disabled.

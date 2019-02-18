@@ -1,22 +1,26 @@
 [
   {
-    "scenes": 
+    "action": "add_scenes",
+    "scenes":
     {
-      "s1": 
+      "s1":
       {
-        "plots": 
+        "plots":
         {
-          "p1": 
+          "p1":
           {
             "type": "pseudocolor",
-            "params": 
-            {
-              "field": "e"
-            }
+            "field": "e"
           }
         },
-        "image_prefix": "energy"
+        "image_prefix": "energy_%04d"
       }
     }
+  },
+  {
+    "action": "execute"
+  },
+  {
+    "action": "reset"
   }
 ]

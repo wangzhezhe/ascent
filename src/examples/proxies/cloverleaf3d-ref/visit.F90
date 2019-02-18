@@ -2,17 +2,17 @@
 !
 ! This file is part of CloverLeaf.
 !
-! CloverLeaf is free software: you can redistribute it and/or modify it under 
-! the terms of the GNU General Public License as published by the 
-! Free Software Foundation, either version 3 of the License, or (at your option) 
+! CloverLeaf is free software: you can redistribute it and/or modify it under
+! the terms of the GNU General Public License as published by the
+! Free Software Foundation, either version 3 of the License, or (at your option)
 ! any later version.
 !
-! CloverLeaf is distributed in the hope that it will be useful, but 
-! WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or 
-! FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more 
+! CloverLeaf is distributed in the hope that it will be useful, but
+! WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+! FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 ! details.
 !
-! You should have received a copy of the GNU General Public License along with 
+! You should have received a copy of the GNU General Public License along with
 ! CloverLeaf. If not, see http://www.gnu.org/licenses/.
 
 !>  @brief Generates graphics output files.
@@ -63,7 +63,7 @@ SUBROUTINE visit(my_ascent)
   TYPE(C_PTR) my_ascent
   TYPE(C_PTR) sim_data
   TYPE(C_PTR) verify_info
-      
+
   TYPE(C_PTR) sim_actions
   TYPE(C_PTR) add_scene_act
   TYPE(C_PTR) scenes
@@ -76,20 +76,6 @@ SUBROUTINE visit(my_ascent)
   REAL(8), ALLOCATABLE :: xvel(:,:,:), yvel(:,:,:), zvel(:,:,:)
 
   name = 'clover'
-  IF ( parallel%boss ) THEN
-    IF(first_call) THEN
-
-      nblocks=number_of_chunks
-      filename = "clover.visit"
-      u=get_unit(dummy)
-      OPEN(UNIT=u,FILE=filename,STATUS='UNKNOWN',IOSTAT=err)
-      WRITE(u,'(a,i5)')'!NBLOCKS ',nblocks
-      CLOSE(u)
-
-      first_call=.FALSE.
-
-    ENDIF
-  ENDIF
 
   IF(profiler_on) kernel_time=timer()
   DO c=1,chunks_per_task
@@ -109,30 +95,13 @@ SUBROUTINE visit(my_ascent)
   IF(profiler_on) kernel_time=timer()
   CALL viscosity()
   IF(profiler_on) profiler%viscosity=profiler%viscosity+(timer()-kernel_time)
-  IF ( parallel%boss ) THEN
 
-    filename = "clover.visit"
-    u=get_unit(dummy)
-    OPEN(UNIT=u,FILE=filename,STATUS='UNKNOWN',POSITION='APPEND',IOSTAT=err)
-
-    DO c = 1, number_of_chunks
-      WRITE(chunk_name, '(i6)') c+100000
-      chunk_name(1:1) = "."
-      WRITE(step_name, '(i6)') step+100000
-      step_name(1:1) = "."
-      filename = trim(trim(name) //trim(chunk_name)//trim(step_name))//".vtk"
-      WRITE(u,'(a)')TRIM(filename)
-    ENDDO
-    CLOSE(u)
-
-  ENDIF
-  
   !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   ! Begin Ascent Integration
   !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  
+
   IF(profiler_on) kernel_time=timer()
   DO c = 1, chunks_per_task
     IF(chunks(c)%task.EQ.parallel%task) THEN
@@ -224,7 +193,7 @@ SUBROUTINE visit(my_ascent)
       CALL conduit_node_set_path_float64_ptr(sim_data,"coordsets/coords/values/z", zcoords, nzv*1_8)
       CALL conduit_node_set_path_char8_str(sim_data,"topologies/mesh/type", "rectilinear")
       CALL conduit_node_set_path_char8_str(sim_data,"topologies/mesh/coordset", "coords")
-      ! density 
+      ! density
       CALL conduit_node_set_path_char8_str(sim_data,"fields/density/association", "element")
       CALL conduit_node_set_path_char8_str(sim_data,"fields/density/topology", "mesh")
       CALL conduit_node_set_path_char8_str(sim_data,"fields/density/type", "scalar")
@@ -239,21 +208,13 @@ SUBROUTINE visit(my_ascent)
       CALL conduit_node_set_path_char8_str(sim_data,"fields/pressure/topology", "mesh")
       CALL conduit_node_set_path_char8_str(sim_data,"fields/pressure/type", "scalar")
       CALL conduit_node_set_path_float64_ptr(sim_data,"fields/pressure/values", pressure, ncells)
-      ! velocity x 
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_x/association", "vertex")
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_x/topology", "mesh")
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_x/type", "scalar")
-      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity_x/values", xvel, nnodes)
-      ! velocity y
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_y/association", "vertex")
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_y/topology", "mesh")
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_y/type", "scalar")
-      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity_y/values", yvel, nnodes)
-      ! velocity z
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_z/association", "vertex")
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_z/topology", "mesh")
-      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_z/type", "scalar")
-      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity_z/values", zvel, nnodes)
+      ! velocity x
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity/association", "vertex")
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity/topology", "mesh")
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity/type", "scalar")
+      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity/values/u", xvel, nnodes)
+      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity/values/v", xvel, nnodes)
+      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity/values/w", xvel, nnodes)
       ! CALL sim_data%print_detailed()
 
       WRITE(chunk_name, '(i6)') parallel%task+100001
@@ -270,7 +231,7 @@ SUBROUTINE visit(my_ascent)
 
       scenes = conduit_node_fetch(add_scene_act,"scenes")
       CALL conduit_node_set_path_char8_str(scenes,"s1/plots/p1/type", "volume")
-      CALL conduit_node_set_path_char8_str(scenes,"s1/plots/p1/params/field", "energy")
+      CALL conduit_node_set_path_char8_str(scenes,"s1/plots/p1/field", "energy")
 
       execute_act = conduit_node_append(sim_actions)
       CALL conduit_node_set_path_char8_str(execute_act,"action", "execute")
@@ -287,8 +248,8 @@ SUBROUTINE visit(my_ascent)
       DEALLOCATE(xvel, yvel, zvel)
       DEALLOCATE(density, energy, pressure)
       DEALLOCATE(xcoords, ycoords, zcoords)
-      
-      
+
+
       !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ! End Ascent Integration

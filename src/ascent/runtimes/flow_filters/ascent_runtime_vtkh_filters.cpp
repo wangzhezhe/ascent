@@ -1,8 +1,7 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
-// Copyright (c) 2015-2018, Lawrence Livermore National Security, LLC.
+// Copyright (c) 2015-2019, Lawrence Livermore National Security, LLC.
 //
-// Produced at the Lawrence Livermore National Laboratory
-//
+// Produced at the Lawrence Livermore National Laboratory //
 // LLNL-CODE-716457
 //
 // All rights reserved.
@@ -64,6 +63,8 @@
 // ascent includes
 //-----------------------------------------------------------------------------
 #include <ascent_logging.hpp>
+#include <ascent_string_utils.hpp>
+#include <ascent_runtime_param_check.hpp>
 #include <flow_graph.hpp>
 #include <flow_workspace.hpp>
 
@@ -78,22 +79,25 @@
 #include <vtkh/rendering/RayTracer.hpp>
 #include <vtkh/rendering/Scene.hpp>
 #include <vtkh/rendering/MeshRenderer.hpp>
+#include <vtkh/rendering/PointRenderer.hpp>
 #include <vtkh/rendering/VolumeRenderer.hpp>
 #include <vtkh/filters/Clip.hpp>
 #include <vtkh/filters/ClipField.hpp>
 #include <vtkh/filters/IsoVolume.hpp>
 #include <vtkh/filters/MarchingCubes.hpp>
-#include <vtkh/filters/PointAverage.hpp>
 #include <vtkh/filters/NoOp.hpp>
+#include <vtkh/filters/Lagrangian.hpp>
+#include <vtkh/filters/Log.hpp>
 #include <vtkh/filters/Slice.hpp>
 #include <vtkh/filters/Threshold.hpp>
+#include <vtkh/filters/VectorMagnitude.hpp>
 #include <vtkm/cont/DataSet.h>
 
 #include <ascent_vtkh_data_adapter.hpp>
+#include <ascent_runtime_conduit_to_vtkm_parsing.hpp>
 #endif
 
-#include <chrono>
-#include <sys/time.h>
+#include <stdio.h>
 
 using namespace conduit;
 using namespace std;
@@ -123,7 +127,78 @@ namespace filters
 //-----------------------------------------------------------------------------
 namespace detail
 {
-//
+std::string
+check_color_table_surprises(const conduit::Node &color_table)
+{
+  std::string surprises;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("name");
+  valid_paths.push_back("reverse");
+
+  std::vector<std::string> ignore_paths;
+  ignore_paths.push_back("control_points");
+
+  surprises += surprise_check(valid_paths, ignore_paths, color_table);
+  if(color_table.has_path("control_points"))
+  {
+    std::vector<std::string> c_valid_paths;
+    c_valid_paths.push_back("type");
+    c_valid_paths.push_back("alpha");
+    c_valid_paths.push_back("color");
+    c_valid_paths.push_back("position");
+
+    const conduit::Node &control_points = color_table["control_points"];
+    const int num_points = control_points.number_of_children();
+    for(int i = 0; i < num_points; ++i)
+    {
+      const conduit::Node &point = control_points.child(i);
+      surprises += surprise_check(c_valid_paths, point);
+    }
+  }
+
+  return surprises;
+}
+
+std::string
+check_renders_surprises(const conduit::Node &renders_node)
+{
+  std::string surprises;
+  const int num_renders = renders_node.number_of_children();
+  // render paths
+  std::vector<std::string> r_valid_paths;
+  r_valid_paths.push_back("image_name");
+  r_valid_paths.push_back("image_width");
+  r_valid_paths.push_back("image_height");
+  r_valid_paths.push_back("camera/look_at");
+  r_valid_paths.push_back("camera/position");
+  r_valid_paths.push_back("camera/up");
+  r_valid_paths.push_back("camera/fov");
+  r_valid_paths.push_back("camera/xpan");
+  r_valid_paths.push_back("camera/ypan");
+  r_valid_paths.push_back("camera/zoom");
+  r_valid_paths.push_back("camera/near_plane");
+  r_valid_paths.push_back("camera/far_plane");
+  r_valid_paths.push_back("type");
+  r_valid_paths.push_back("phi");
+  r_valid_paths.push_back("theta");
+  r_valid_paths.push_back("db_name");
+  // TODO: document
+  r_valid_paths.push_back("render_bg");
+  r_valid_paths.push_back("camera/azimuth");
+  r_valid_paths.push_back("camera/elevation");
+  r_valid_paths.push_back("annotations");
+  r_valid_paths.push_back("output_path");
+  r_valid_paths.push_back("fg_color");
+  r_valid_paths.push_back("bg_color");
+
+  for(int i = 0; i < num_renders; ++i)
+  {
+    const conduit::Node &render_node = renders_node.child(i);
+    surprises += surprise_check(r_valid_paths, render_node);
+  }
+  return surprises;
+}
 // A simple container to create registry entries for
 // renderer and the data set it renders. Without this,
 // pipeline results (data sets) would be deleted before
@@ -216,180 +291,6 @@ public:
 }; // Ascent Scene
 
 //-----------------------------------------------------------------------------
-void
-parse_camera(const conduit::Node camera_node, vtkm::rendering::Camera &camera)
-{
-    typedef vtkm::Vec<vtkm::Float32,3> vtkmVec3f;
-    //
-    // Get the optional camera parameters
-    //
-    if(camera_node.has_child("look_at"))
-    {
-        conduit::Node n;
-        camera_node["look_at"].to_float64_array(n);
-        const float64 *coords = n.as_float64_ptr();
-        vtkmVec3f look_at(coords[0], coords[1], coords[2]);
-        camera.SetLookAt(look_at);
-    }
-
-    if(camera_node.has_child("position"))
-    {
-        conduit::Node n;
-        camera_node["position"].to_float64_array(n);
-        const float64 *coords = n.as_float64_ptr();
-        vtkmVec3f position(coords[0], coords[1], coords[2]);
-        camera.SetPosition(position);
-    }
-
-    if(camera_node.has_child("up"))
-    {
-        conduit::Node n;
-        camera_node["up"].to_float64_array(n);
-        const float64 *coords = n.as_float64_ptr();
-        vtkmVec3f up(coords[0], coords[1], coords[2]);
-        vtkm::Normalize(up);
-        camera.SetViewUp(up);
-    }
-
-    if(camera_node.has_child("fov"))
-    {
-        camera.SetFieldOfView(camera_node["fov"].to_float64());
-    }
-
-    if(camera_node.has_child("xpan") || camera_node.has_child("ypan"))
-    {
-        vtkm::Float64 xpan = 0.;
-        vtkm::Float64 ypan = 0.;
-        if(camera_node.has_child("xpan")) xpan = camera_node["xpan"].to_float64();
-        if(camera_node.has_child("ypan")) xpan = camera_node["ypan"].to_float64();
-        camera.Pan(xpan, ypan);
-    }
-
-    if(camera_node.has_child("zoom"))
-    {
-        camera.Zoom(camera_node["zoom"].to_float64());
-    }
-    //
-    // With a new potential camera position. We need to reset the
-    // clipping plane as not to cut out part of the data set
-    //
-
-    if(camera_node.has_child("near_plane"))
-    {
-        vtkm::Range clipping_range = camera.GetClippingRange();
-        clipping_range.Min = camera_node["near_plane"].to_float64();
-        camera.SetClippingRange(clipping_range);
-    }
-
-    if(camera_node.has_child("far_plane"))
-    {
-        vtkm::Range clipping_range = camera.GetClippingRange();
-        clipping_range.Max = camera_node["far_plane"].to_float64();
-        camera.SetClippingRange(clipping_range);
-    }
-
-    // this is an offset from the current azimuth
-    if(camera_node.has_child("azimuth"))
-    {
-        vtkm::Float64 azimuth = camera_node["azimuth"].to_float64();
-        camera.Azimuth(azimuth);
-    }
-    if(camera_node.has_child("elevation"))
-    {
-        vtkm::Float64 elevation = camera_node["elevation"].to_float64();
-        camera.Azimuth(elevation);
-    }
-}
-
-vtkm::cont::ColorTable
-parse_color_table(const conduit::Node &color_table_node)
-{
-  std::string color_map_name = "";
-  if(color_table_node.has_child("name"))
-  {
-      color_map_name = color_table_node["name"].as_string();
-  }
-
-  vtkm::cont::ColorTable color_table(color_map_name);
-
-  if(color_map_name == "")
-  {
-      ASCENT_INFO("Color map name is empty. Ignoring");
-      color_table.Clear();
-  }
-
-  if(!color_table_node.has_child("control_points"))
-  {
-      if(color_map_name == "")
-        ASCENT_ERROR("Error: a color table node was provided without a color map name or control points");
-      return color_table;
-  }
-
-  NodeConstIterator itr = color_table_node.fetch("control_points").children();
-  while(itr.has_next())
-  {
-      const Node &peg = itr.next();
-      if(!peg.has_child("position"))
-      {
-          ASCENT_WARN("Color map control point must have a position. Ignoring");
-      }
-
-      float64 position = peg["position"].to_float64();
-
-      if(position > 1.0 || position < 0.0)
-      {
-            ASCENT_WARN("Cannot add color map control point position "
-                          << position
-                          << ". Must be a normalized scalar.");
-      }
-
-      if (peg["type"].as_string() == "rgb")
-      {
-          conduit::Node n;
-          peg["color"].to_float64_array(n);
-          const float64 *color = n.as_float64_ptr();
-
-          vtkm::Vec<vtkm::Float64,3> ecolor(color[0], color[1], color[2]);
-
-          for(int i = 0; i < 3; ++i)
-          {
-            ecolor[i] = std::min(1., std::max(ecolor[i], 0.));
-          }
-
-          color_table.AddPoint(position, ecolor);
-      }
-      else if (peg["type"].as_string() == "alpha")
-      {
-          float64 alpha = peg["alpha"].to_float64();
-          alpha = std::min(1., std::max(alpha, 0.));
-          color_table.AddPointAlpha(position, alpha);
-      }
-      else
-      {
-          ASCENT_WARN("Unknown color table control point type " << peg["type"].as_string()<<
-                      "\nValid types are 'alpha' and 'rgb'");
-      }
-  }
-
-  return color_table;
-}
-
-void parse_image_dims(const conduit::Node &node, int &width, int &height)
-{
-  width = 1024;
-  height = 1024;
-
-  if(node.has_path("image_width"))
-  {
-    width = node["image_width"].to_int32();
-  }
-
-  if(node.has_path("image_height"))
-  {
-    height = node["image_height"].to_int32();
-  }
-
-}
 
 vtkh::Render parse_render(const conduit::Node &render_node,
                           vtkm::Bounds &bounds,
@@ -421,6 +322,72 @@ vtkh::Render parse_render(const conduit::Node &render_node,
     render.SetCamera(camera);
   }
 
+  if(render_node.has_path("annotations"))
+  {
+    if(!render_node["annotations"].dtype().is_string())
+    {
+      ASCENT_ERROR("render/annotations node must be a string value");
+    }
+    const std::string annot = render_node["annotations"].as_string();
+    // default is always render annotations
+    if(annot == "false")
+    {
+      render.DoRenderAnnotations(false);
+    }
+  }
+
+  if(render_node.has_path("render_bg"))
+  {
+    if(!render_node["render_bg"].dtype().is_string())
+    {
+      ASCENT_ERROR("render/render_bg node must be a string value");
+    }
+    const std::string render_bg = render_node["render_bg"].as_string();
+    // default is always render the background
+    // off will make the background transparent
+    if(render_bg == "false")
+    {
+      render.DoRenderBackground(false);
+    }
+  }
+
+  if(render_node.has_path("bg_color"))
+  {
+    if(!render_node["bg_color"].dtype().is_number() ||
+       render_node["bg_color"].dtype().number_of_elements() != 3)
+    {
+      ASCENT_ERROR("render/bg_color node must be an array of 3 values");
+    }
+    conduit::Node n;
+    render_node["bg_color"].to_float32_array(n);
+    const float32 *color = n.as_float32_ptr();
+    float32 color4f[4];
+    color4f[0] = color[0];
+    color4f[1] = color[1];
+    color4f[2] = color[2];
+    color4f[3] = 1.f;
+    render.SetBackgroundColor(color4f);
+  }
+
+  if(render_node.has_path("fg_color"))
+  {
+    if(!render_node["fg_color"].dtype().is_number() ||
+       render_node["fg_color"].dtype().number_of_elements() != 3)
+    {
+      ASCENT_ERROR("render/fg_color node must be an array of 3 values");
+    }
+    conduit::Node n;
+    render_node["fg_color"].to_float32_array(n);
+    const float32 *color = n.as_float32_ptr();
+    float32 color4f[4];
+    color4f[0] = color[0];
+    color4f[1] = color[1];
+    color4f[2] = color[2];
+    color4f[3] = 1.f;
+    render.SetForegroundColor(color4f);
+  }
+
+
   return render;
 }
 
@@ -432,18 +399,22 @@ protected:
   std::vector<float>                   m_phi_values;
   std::vector<float>                   m_theta_values;
   std::vector<float>                   m_times;
+  std::string                          m_csv;
 
   vtkm::Bounds                         m_bounds;
   const int                            m_phi;
   const int                            m_theta;
   std::string                          m_image_name;
-  std::string                          m_current_path;
+  std::string                          m_image_path;
+  std::string                          m_db_path;
+  std::string                          m_base_path;
   float                                m_time;
 public:
   CinemaManager(vtkm::Bounds bounds,
                 const int phi,
                 const int theta,
-                const std::string image_name)
+                const std::string image_name,
+                const std::string path)
     : m_bounds(bounds),
       m_phi(phi),
       m_theta(theta),
@@ -451,6 +422,9 @@ public:
       m_time(0.f)
   {
     this->create_cinema_cameras(bounds);
+    m_csv = "phi, theta, time, FILE\n";
+
+    m_base_path = conduit::utils::join_file_path(path, "cinema_databases");
   }
 
   CinemaManager()
@@ -463,61 +437,72 @@ public:
   void add_time_step()
   {
     m_times.push_back(m_time);
-    m_time += 1.f;
-
-    // add top level dir
-    string output_path = "cinema_databases";
 
     int rank = 0;
 #ifdef ASCENT_MPI_ENABLED
     MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
     MPI_Comm_rank(mpi_comm, &rank);
 #endif
-    if(rank == 0 && !conduit::utils::is_directory(output_path))
+    if(rank == 0 && !conduit::utils::is_directory(m_base_path))
     {
-        conduit::utils::create_directory(output_path);
+        conduit::utils::create_directory(m_base_path);
     }
 
     // add a database path
-    output_path = conduit::utils::join_file_path(output_path, m_image_name);
+    m_db_path = conduit::utils::join_file_path(m_base_path, m_image_name);
 
-    if(rank == 0 && !conduit::utils::is_directory(output_path))
+    if(rank == 0 && !conduit::utils::is_directory(m_db_path))
     {
-        conduit::utils::create_directory(output_path);
+        conduit::utils::create_directory(m_db_path);
     }
 
     std::stringstream ss;
-    ss<<m_time;
+    ss<<fixed<<showpoint;
+    ss<<std::setprecision(1)<<m_time;
     // add a time step path
-    output_path = conduit::utils::join_file_path(output_path,ss.str());
+    m_image_path = conduit::utils::join_file_path(m_db_path,ss.str());
 
-    if(!conduit::utils::is_directory(output_path))
+    if(!conduit::utils::is_directory(m_image_path))
     {
-        conduit::utils::create_directory(output_path);
+        conduit::utils::create_directory(m_image_path);
     }
 
-    m_current_path = output_path;
+    m_time += 1.f;
   }
 
   void fill_renders(std::vector<vtkh::Render> *renders,
                     const std::vector<vtkm::Id> &domain_ids,
-                    int width,
-                    int height)
+                    const conduit::Node &render_node)
   {
+    conduit::Node render_copy = render_node; 
+    // cinema is controlling the camera so get
+    // rid of it
+    if(render_copy.has_path("camera"))
+    {
+      render_copy["camera"].reset();
+    }
+    std::string tmp_name = "";
+    vtkh::Render render = detail::parse_render(render_copy,
+                                               m_bounds,
+                                               domain_ids,
+                                               tmp_name);
     const int num_renders = m_image_names.size();
 
     for(int i = 0; i < num_renders; ++i)
     {
-      std::string image_name = conduit::utils::join_file_path(m_current_path , m_image_names[i]);
+      std::string image_name = conduit::utils::join_file_path(m_image_path , m_image_names[i]);
 
-      vtkh::Render render = vtkh::MakeRender(width,
-                                             height,
-                                             m_bounds,
-                                             domain_ids,
-                                             image_name);
+      render.SetImageName(image_name);
       render.SetCamera(m_cameras[i]);
       renders->push_back(render);
     }
+  }
+
+  std::string get_string(const float value)
+  {
+    std::stringstream ss;
+    ss<<std::fixed<<std::setprecision(1)<<value;
+    return ss.str();
   }
 
   void write_metadata()
@@ -538,29 +523,66 @@ public:
     meta["name_pattern"] = "{time}/{phi}_{theta}_" + m_image_name + ".png";
 
     conduit::Node times;
-    times["default"] = m_times[0];
+    times["default"] = get_string(m_times[0]);
     times["label"] = "time";
     times["type"] = "range";
-    times["values"].set_external(m_times);
+    // we have to make sure that this maps to a json array
+    const int t_size = m_times.size();
+    for(int i = 0; i < t_size; ++i)
+    {
+      times["values"].append().set(get_string(m_times[i]));
+    }
 
     meta["arguments/time"] = times;
 
     conduit::Node phis;
-    phis["default"] = m_phi_values[0];
+    phis["default"] = get_string(m_phi_values[0]);
     phis["label"] = "phi";
     phis["type"] = "range";
-    phis["values"].set_external(m_phi_values);
+    const int phi_size = m_phi_values.size();
+    for(int i = 0; i < phi_size; ++i)
+    {
+      phis["values"].append().set(get_string(m_phi_values[i]));
+    }
 
     meta["arguments/phi"] = phis;
 
     conduit::Node thetas;
-    thetas["default"] = m_theta_values[0];
+    thetas["default"] = get_string(m_theta_values[0]);
     thetas["label"] = "theta";
     thetas["type"] = "range";
-    thetas["values"].set_external(m_theta_values);
+    const int theta_size = m_theta_values.size();
+    for(int i = 0; i < theta_size; ++i)
+    {
+      thetas["values"].append().set(get_string(m_theta_values[i]));
+    }
 
     meta["arguments/theta"] = thetas;
-    meta.save("cinema_databases/" + m_image_name + "/info.json","json");
+    meta.save(m_db_path + "/info.json","json");
+
+    //append current data to our csv file
+    std::stringstream csv;
+
+    csv<<m_csv;
+    std::string current_time = get_string(m_times[t_size - 1]);
+    for(int p = 0; p < phi_size; ++p)
+    {
+      std::string phi = get_string(m_phi_values[p]);
+      for(int t = 0; t < theta_size; ++t)
+      {
+        std::string theta = get_string(m_theta_values[t]);
+        csv<<phi<<",";
+        csv<<theta<<",";
+        csv<<current_time<<",";
+        csv<<current_time<<"/"<<phi<<"_"<<theta<<"_"<<m_image_name<<".png\n";
+      }
+    }
+
+    m_csv = csv.str();
+    std::ofstream out(m_db_path + "/data.csv");
+    out<<m_csv;
+    out.close();
+
   }
 
 private:
@@ -576,14 +598,14 @@ private:
     vtkm::Float32 radius = vtkm::Magnitude(totalExtent) * 2.5 / 2.0;
 
     const double pi = 3.141592653589793;
-    double phi_inc = 180.0 / double(m_phi);
-    double theta_inc = 360.0 / double(m_theta);
+    double phi_inc = 360.0 / double(m_phi);
+    double theta_inc = 180.0 / double(m_theta);
     for(int p = 0; p < m_phi; ++p)
     {
       for(int t = 0; t < m_theta; ++t)
       {
-        float phi  =  phi_inc * p;
-        float theta = -180 + theta_inc * t;
+        float phi  =  -180.f + phi_inc * p;
+        float theta = -90.f + theta_inc * t;
 
         const int i = p * m_theta + t;
 
@@ -593,18 +615,17 @@ private:
         //
         //  spherical coords start (r=1, theta = 0, phi = 0)
         //  (x = 0, y = 0, z = 1)
-        //  up is the x+, and right is y+
         //
 
         vtkmVec3f pos(0.f,0.f,1.f);
-        vtkmVec3f up(1.f,0.f,0.f);
+        vtkmVec3f up(0.f,1.f,0.f);
 
         vtkm::Matrix<vtkm::Float32,4,4> phi_rot;
         vtkm::Matrix<vtkm::Float32,4,4> theta_rot;
         vtkm::Matrix<vtkm::Float32,4,4> rot;
 
-        phi_rot = vtkm::Transform3DRotateY(phi);
-        theta_rot = vtkm::Transform3DRotateZ(theta);
+        phi_rot = vtkm::Transform3DRotateZ(phi);
+        theta_rot = vtkm::Transform3DRotateX(theta);
         rot = vtkm::MatrixMultiply(phi_rot, theta_rot);
 
         up = vtkm::Transform3DVector(rot, up);
@@ -616,17 +637,28 @@ private:
         camera.SetViewUp(up);
         camera.SetLookAt(center);
         camera.SetPosition(pos);
+        camera.Zoom(0.2);
 
         std::stringstream ss;
-        ss<<phi<<"_"<<theta<<"_";
+        ss<<get_string(phi)<<"_"<<get_string(theta)<<"_";
 
         m_image_names.push_back(ss.str() + m_image_name);
         m_cameras.push_back(camera);
-        m_phi_values.push_back(phi);
-        m_theta_values.push_back(theta);
 
       } // theta
     } // phi
+
+    for(int p = 0; p < m_phi; ++p)
+    {
+      float phi  =  -180.f + phi_inc * p;
+      m_phi_values.push_back(phi);
+    }
+
+    for(int t = 0; t < m_theta; ++t)
+    {
+      float theta = -90.f + theta_inc * t;
+      m_theta_values.push_back(theta);
+    }
 
   }
 
@@ -647,14 +679,15 @@ public:
   static void create_db(vtkm::Bounds bounds,
                         const int phi,
                         const int theta,
-                        std::string db_name)
+                        std::string db_name,
+                        std::string path)
   {
     if(db_exists(db_name))
     {
       ASCENT_ERROR("Creation failed: cinema database already exists");
     }
 
-    m_databases.emplace(std::make_pair(db_name, CinemaManager(bounds, phi, theta, db_name)));
+    m_databases.emplace(std::make_pair(db_name, CinemaManager(bounds, phi, theta, db_name, path)));
   }
 
   static CinemaManager& get_db(std::string db_name)
@@ -675,27 +708,6 @@ std::map<std::string, CinemaManager> CinemaDatabases::m_databases;
 //-----------------------------------------------------------------------------
 // -- end namespace detail --
 //-----------------------------------------------------------------------------
-
-static std::ofstream *timingInfo = NULL;
-void RecordTime(const std::string &nm, double time)
-{
-    int rank = 0, numRanks = 0;
-#ifdef ASCENT_MPI_ENABLED
-    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-    MPI_Comm_rank(mpi_comm, &rank);
-    MPI_Comm_size(mpi_comm, &numRanks);
-#endif
-
-    if (timingInfo == NULL)
-    {
-        timingInfo = new ofstream;
-        char nm[32];
-        sprintf(nm, "timing.%d.out", rank);
-        timingInfo->open(nm, ofstream::out);
-    }
-    (*timingInfo)<<"ASCENT_"<<nm<<"_"<<rank<<"_"<<numRanks<<" "<<time<<endl;
-    //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
-}
 
 //-----------------------------------------------------------------------------
 EnsureVTKH::EnsureVTKH()
@@ -723,13 +735,24 @@ EnsureVTKH::declare_interface(Node &i)
 void
 EnsureVTKH::execute()
 {
+    bool zero_copy = false;
+    if(params().has_path("zero_copy"))
+    {
+      if(params()["zero_copy"].as_string() == "true")
+      {
+        zero_copy = true;
+      }
+    }
+
     if(input(0).check_type<Node>())
     {
         // convert from blueprint to vtk-h
         const Node *n_input = input<Node>(0);
-        vtkh::DataSet *res = VTKHDataAdapter::BlueprintToVTKHDataSet(*n_input);
-        set_output<vtkh::DataSet>(res);
 
+        vtkh::DataSet *res = nullptr;;
+        res = VTKHDataAdapter::BlueprintToVTKHDataSet(*n_input, zero_copy);
+
+        set_output<vtkh::DataSet>(res);
     }
     else if(input(0).check_type<vtkm::cont::DataSet>())
     {
@@ -749,80 +772,6 @@ EnsureVTKH::execute()
     }
 }
 
-
-EnsureBlueprint::EnsureBlueprint()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-EnsureBlueprint::~EnsureBlueprint()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-EnsureBlueprint::declare_interface(Node &i)
-{
-    i["type_name"]   = "ensure_blueprint";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-void
-EnsureBlueprint::execute()
-{
-    if(input(0).check_type<vtkh::DataSet>())
-    {
-        // convert from vtk-h to blueprint
-        vtkh::DataSet *in_dset = input<vtkh::DataSet>(0);
-
-        const vtkm::Id num_domains = in_dset->GetNumberOfDomains();
-        conduit::Node * res = new conduit::Node();
-        uint64 cycle = in_dset->GetCycle();
-        for(vtkm::Id dom = 0; dom < num_domains; ++dom)
-        {
-            vtkm::cont::DataSet dset;
-            vtkm::Id domain_id;
-            in_dset->GetDomain(dom, dset, domain_id);
-            conduit::Node &bp = res->append();
-            VTKHDataAdapter::VTKmToBlueprintDataSet(&dset, bp);
-            bp["state/cycle"] = cycle;
-            bp["state/domain_id"] = domain_id;
-        }
-        set_output<conduit::Node>(res);
-    }
-    else if(input(0).check_type<vtkm::cont::DataSet>())
-    {
-        // wrap our vtk-m dataset in vtk-h
-        conduit::Node *res = new conduit::Node();
-        VTKHDataAdapter::VTKmToBlueprintDataSet(input<vtkm::cont::DataSet>(0), *res);
-        set_output<conduit::Node>(res);
-    }
-    else if(input(0).check_type<Node>())
-    {
-        // our data is already a node, pass though
-        conduit::Node *res = input<Node>(0);
-        conduit::Node info;
-        bool success = conduit::blueprint::verify("mesh",*res,info);
-
-        if(!success)
-        {
-          info.print();
-          ASCENT_ERROR("conduit::Node input to EnsureBlueprint is non-conforming")
-        }
-
-        set_output(input(0));
-    }
-    else
-    {
-        ASCENT_ERROR("ensure_blueprint input must be a data set"
-                     "conforming conduit::Node, a vtk-m dataset, or vtk-h dataset");
-    }
-}
 
 //-----------------------------------------------------------------------------
 VTKHMarchingCubes::VTKHMarchingCubes()
@@ -852,23 +801,28 @@ VTKHMarchingCubes::verify_params(const conduit::Node &params,
                                  conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
-    if(! params.has_child("field") ||
-       ! params["field"].dtype().is_string() )
-    {
-        info["errors"].append() = "Missing required string parameter 'field'";
-        res = false;
-    }
+    bool res = check_string("field",params, info, true);
+    bool has_values = check_numeric("iso_values",params, info, false);
+    bool has_levels = check_numeric("levels",params, info, false);
 
-    if((! params.has_child("iso_values") ||
-       ! params["iso_values"].dtype().is_number()) &&
-    (! params.has_child("levels") ||
-       ! params["levels"].dtype().is_number()) )
+    if(!has_values && !has_levels)
     {
         info["errors"].append() = "Missing required numeric parameter. Contour must"
                                   " specify 'iso_values' or 'levels'.";
         res = false;
+    }
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("levels");
+    valid_paths.push_back("iso_values");
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
     }
 
     return res;
@@ -878,9 +832,7 @@ VTKHMarchingCubes::verify_params(const conduit::Node &params,
 void
 VTKHMarchingCubes::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
 
-    ASCENT_INFO("Marching the cubes!");
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("vtkh_marchingcubes input must be a vtk-h dataset");
@@ -910,54 +862,53 @@ VTKHMarchingCubes::execute()
       marcher.SetLevels(params()["levels"].to_int32());
     }
 
-    marcher.AddMapField("pressure");
     marcher.Update();
 
     vtkh::DataSet *iso_output = marcher.GetOutput();
-
     set_output<vtkh::DataSet>(iso_output);
-
-    RecordTime("ContourFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
-
 //-----------------------------------------------------------------------------
-VTKHPointAverage::VTKHPointAverage()
+VTKHVectorMagnitude::VTKHVectorMagnitude()
 :Filter()
 {
 // empty
 }
 
 //-----------------------------------------------------------------------------
-VTKHPointAverage::~VTKHPointAverage()
+VTKHVectorMagnitude::~VTKHVectorMagnitude()
 {
 // empty
 }
 
 //-----------------------------------------------------------------------------
 void
-VTKHPointAverage::declare_interface(Node &i)
+VTKHVectorMagnitude::declare_interface(Node &i)
 {
-    i["type_name"]   = "vtkh_pointaverage";
+    i["type_name"]   = "vtkh_vector_magnitude";
     i["port_names"].append() = "in";
     i["output_port"] = "true";
 }
 
 //-----------------------------------------------------------------------------
 bool
-VTKHPointAverage::verify_params(const conduit::Node &params,
+VTKHVectorMagnitude::verify_params(const conduit::Node &params,
                                  conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
-    if(! params.has_child("field") ||
-       ! params["field"].dtype().is_string() ||
-       ! params.has_child("outputfield") ||
-       ! params["outputfield"].dtype().is_string())
+    bool res = check_string("field",params, info, true);
+    res = check_string("output_name",params, info, false) && res;
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("output_name");
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
     {
-        info["errors"].append() = "Missing required string parameter 'field'";
-        res = false;
+      res = false;
+      info["errors"].append() = surprises;
     }
 
     return res;
@@ -965,31 +916,31 @@ VTKHPointAverage::verify_params(const conduit::Node &params,
 
 //-----------------------------------------------------------------------------
 void
-VTKHPointAverage::execute()
+VTKHVectorMagnitude::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
 
-    ASCENT_INFO("Point Average Filter");
     if(!input(0).check_type<vtkh::DataSet>())
     {
-        ASCENT_ERROR("vtkh_pointaverage input must be a vtk-h dataset");
+        ASCENT_ERROR("vtkh_vector_magnitude input must be a vtk-h dataset");
     }
 
     std::string field_name = params()["field"].as_string();
-    std::string output_field_name = params()["outputfield"].as_string();
 
     vtkh::DataSet *data = input<vtkh::DataSet>(0);
-    vtkh::PointAverage avg;
+    vtkh::VectorMagnitude mag;
 
-    avg.SetInput(data);
-    avg.SetField(field_name);
-    avg.SetOutputField(output_field_name);
+    mag.SetInput(data);
+    mag.SetField(field_name);
+    if(params().has_path("output_name"))
+    {
+      std::string output_name = params()["output_name"].as_string();
+      mag.SetResultName(output_name);
+    }
 
-    avg.Update();
-    vtkh::DataSet *avg_output = avg.GetOutput();
-    set_output<vtkh::DataSet>(avg_output);
+    mag.Update();
 
-    RecordTime("PointAverageFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    vtkh::DataSet *mag_output = mag.GetOutput();
+    set_output<vtkh::DataSet>(mag_output);
 }
 
 //-----------------------------------------------------------------------------
@@ -1020,8 +971,27 @@ VTKH3Slice::verify_params(const conduit::Node &params,
                          conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
+    bool res = true;
+    // this can have no parameters
+    if(params.number_of_children() != 0)
+    {
+      res &= check_numeric("x_offset",params, info, false);
+      res &= check_numeric("y_offset",params, info, false);
+      res &= check_numeric("z_offset",params, info, false);
+
+      std::vector<std::string> valid_paths;
+      valid_paths.push_back("x_offset");
+      valid_paths.push_back("y_offset");
+      valid_paths.push_back("z_offset");
+      std::string surprises = surprise_check(valid_paths, params);
+
+      if(surprises != "")
+      {
+        res = false;
+        info["errors"].append() = surprises;
+      }
+    }
     return res;
 }
 
@@ -1030,7 +1000,6 @@ void
 VTKH3Slice::execute()
 {
 
-    ASCENT_INFO("3 Slicing!");
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("vtkh_3slice input must be a vtk-h dataset");
@@ -1126,46 +1095,29 @@ VTKHSlice::verify_params(const conduit::Node &params,
                          conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
-    if(! params.has_path("point/x") ||
-       ! params["point/y"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'point/x'";
-        res = false;
-    }
-    if(! params.has_path("point/y") ||
-       ! params["point/y"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'point/y'";
-        res = false;
-    }
-    if(! params.has_path("point/z") ||
-       ! params["point/z"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'point/z'";
-        res = false;
-    }
+    bool res = check_numeric("point/x",params, info, true);
 
-    if(! params.has_path("normal/x") ||
-       ! params["normal/x"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'normal/x'";
-        res = false;
-    }
-    if(! params.has_path("normal/y") ||
-       ! params["normal/y"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'normal/y'";
-        res = false;
-    }
-    if(! params.has_path("normal/z") ||
-       ! params["normal/z"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'normal/z'";
-        res = false;
-    }
+    res = check_numeric("point/y",params, info, true) && res;
+    res = check_numeric("point/z",params, info, true) && res;
+    res = check_numeric("normal/x",params, info, true) && res;
+    res = check_numeric("normal/y",params, info, true) && res;
+    res = check_numeric("normal/z",params, info, true) && res;
 
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("point/x");
+    valid_paths.push_back("point/y");
+    valid_paths.push_back("point/z");
+    valid_paths.push_back("normal/x");
+    valid_paths.push_back("normal/y");
+    valid_paths.push_back("normal/z");
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
+    }
 
     return res;
 }
@@ -1175,7 +1127,6 @@ void
 VTKHSlice::execute()
 {
 
-    ASCENT_INFO("Slicing!");
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("vtkh_slice input must be a vtk-h dataset");
@@ -1233,26 +1184,22 @@ VTKHThreshold::verify_params(const conduit::Node &params,
                              conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
-    if(! params.has_child("field") ||
-       ! params["field"].dtype().is_string() )
-    {
-        info["errors"].append() = "Missing required string parameter 'field'";
-        res = false;
-    }
+    bool res = check_string("field",params, info, true);
 
-    if(! params.has_child("min_value") ||
-       ! params["min_value"].dtype().is_number() )
+    res = check_numeric("min_value",params, info, true) && res;
+    res = check_numeric("max_value",params, info, true) && res;
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("min_value");
+    valid_paths.push_back("max_value");
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
     {
-        info["errors"].append() = "Missing required numeric parameter 'min_value'";
-        res = false;
-    }
-    if(! params.has_child("max_value") ||
-       ! params["max_value"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'max_value'";
-        res = false;
+      res = false;
+      info["errors"].append() = surprises;
     }
 
     return res;
@@ -1264,7 +1211,6 @@ void
 VTKHThreshold::execute()
 {
 
-    ASCENT_INFO("Thresholding!");
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1324,12 +1270,30 @@ DefaultRender::verify_params(const conduit::Node &params,
                              conduit::Node &info)
 {
     info.reset();
-    bool res = true;
-    if(! params.has_child("image_prefix") )
+    bool res = check_string("image_prefix",params, info, true);
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("image_prefix");
+
+    std::vector<std::string> ignore_paths;
+    ignore_paths.push_back("renders");
+
+    std::string surprises = surprise_check(valid_paths, ignore_paths, params);
+
+
+    // parse render surprises
+    if(params.has_path("renders"))
     {
-        info["errors"].append() = "Missing required string parameter 'image_prefix'";
-        res = false;
+      const conduit::Node &renders_node = params["renders"];
+      surprises += detail::check_renders_surprises(renders_node);
     }
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
+    }
+
     return res;
 }
 
@@ -1338,8 +1302,7 @@ DefaultRender::verify_params(const conduit::Node &params,
 void
 DefaultRender::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
-    ASCENT_INFO("We be default rendering!");
+
 
     if(!input(0).check_type<vtkm::Bounds>())
     {
@@ -1357,6 +1320,13 @@ DefaultRender::execute()
     std::copy(domain_ids->begin(), domain_ids->end(), v_domain_ids.begin());
 
     std::vector<vtkh::Render> *renders = new std::vector<vtkh::Render>();
+
+    Node * meta = graph().workspace().registry().fetch<Node>("metadata");
+    int cycle = 0;
+    if(meta->has_path("cycle"))
+    {
+      cycle = (*meta)["cycle"].as_int32();
+    }
 
     if(params().has_path("renders"))
     {
@@ -1391,33 +1361,46 @@ DefaultRender::execute()
           {
             ASCENT_ERROR("Cinema must specify a 'db_name'");
           }
+
+          std::string output_path = "";
+
+          if(render_node.has_path("output_path"))
+          {
+            output_path = render_node["output_path"].as_string();
+          }
+
+          if(!render_node.has_path("db_name"))
+          {
+            ASCENT_ERROR("Cinema must specify a 'db_name'");
+          }
           std::string db_name = render_node["db_name"].as_string();
           bool exists = detail::CinemaDatabases::db_exists(db_name);
           if(!exists)
           {
-            detail::CinemaDatabases::create_db(*bounds,phi,theta, db_name);
+            detail::CinemaDatabases::create_db(*bounds,phi,theta, db_name, output_path);
           }
           detail::CinemaManager &manager = detail::CinemaDatabases::get_db(db_name);
 
           int image_width;
           int image_height;
-          detail::parse_image_dims(render_node, image_width, image_height);
+          parse_image_dims(render_node, image_width, image_height);
 
           manager.add_time_step();
-          manager.fill_renders(renders, v_domain_ids, image_width, image_height);
+          manager.fill_renders(renders, v_domain_ids, render_node);
           manager.write_metadata();
         }
 
         else
         {
+          // this render has a unique name
           if(render_node.has_path("image_name"))
           {
-            image_name = render_node["image_name"].as_string();
+            image_name = expand_family_name(render_node["image_name"].as_string(), cycle);
           }
           else
           {
             std::stringstream ss;
-            ss<<params()["image_prefix"].as_string();
+            ss<<expand_family_name(params()["image_prefix"].as_string(), cycle);
             ss<<"_"<<i;
             image_name = ss.str();
           }
@@ -1432,16 +1415,17 @@ DefaultRender::execute()
     }
     else
     {
+      std::string image_name =  params()["image_prefix"].as_string();
+      image_name = expand_family_name(image_name, cycle);
       vtkh::Render render = vtkh::MakeRender(1024,
                                              1024,
                                              *bounds,
                                              v_domain_ids,
-                                             params()["image_prefix"].as_string());
+                                             image_name);
 
       renders->push_back(render);
     }
     set_output<std::vector<vtkh::Render>>(renders);
-    RecordTime("DefaultRender", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1499,135 +1483,62 @@ VTKHClip::verify_params(const conduit::Node &params,
 
       if(params.has_child("sphere"))
       {
-         if(!params.has_path("sphere/center/x") ||
-            !params["sphere/center/x"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'sphere/center/x'";
-           res = false;
-         }
+         res = check_numeric("sphere/center/x",params, info, true) && res;
+         res = check_numeric("sphere/center/y",params, info, true) && res;
+         res = check_numeric("sphere/center/z",params, info, true) && res;
+         res = check_numeric("sphere/radius",params, info, true) && res;
 
-         if(!params.has_path("sphere/center/y") ||
-            !params["sphere/center/y"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'sphere/center/y'";
-           res = false;
-         }
-
-         if(!params.has_path("sphere/center/z") ||
-            !params["sphere/center/z"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'sphere/center/z'";
-           res = false;
-         }
-
-         if(!params.has_path("sphere/radius") ||
-            !params["sphere/radius"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'sphere/radius'";
-           res = false;
-         }
       }
       else if(params.has_child("box"))
       {
-         if(!params.has_path("box/min/x") ||
-            !params["box/min/x"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'box/min/x'";
-           res = false;
-         }
-
-         if(!params.has_path("box/min/y") ||
-            !params["box/min/y"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'box/min/y'";
-           res = false;
-         }
-
-         if(!params.has_path("box/min/z") ||
-            !params["box/min/z"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'box/min/z'";
-           res = false;
-         }
-
-         if(!params.has_path("box/max/x") ||
-            !params["box/max/x"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'box/max/x'";
-           res = false;
-         }
-
-         if(!params.has_path("box/max/y") ||
-            !params["box/max/y"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'box/max/y'";
-           res = false;
-         }
-
-         if(!params.has_path("box/max/z") ||
-            !params["box/max/z"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'box/max/z'";
-           res = false;
-         }
+         res = check_numeric("box/min/x",params, info, true) && res;
+         res = check_numeric("box/min/y",params, info, true) && res;
+         res = check_numeric("box/min/z",params, info, true) && res;
+         res = check_numeric("box/max/x",params, info, true) && res;
+         res = check_numeric("box/max/y",params, info, true) && res;
+         res = check_numeric("box/max/z",params, info, true) && res;
       }
       else if(params.has_child("plane"))
       {
-         if(!params.has_path("plane/point/x") ||
-            !params["plane/point/x"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'plane/point/x'";
-           res = false;
-         }
-
-         if(!params.has_path("plane/point/y") ||
-            !params["plane/point/y"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'plane/point/y'";
-           res = false;
-         }
-
-         if(!params.has_path("plane/point/z") ||
-            !params["plane/point/z"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'plane/point/z'";
-           res = false;
-         }
-
-         if(!params.has_path("plane/normal/x") ||
-            !params["plane/normal/x"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'plane/normal/x'";
-           res = false;
-         }
-
-         if(!params.has_path("plane/normal/y") ||
-            !params["plane/normal/y"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'plane/normal/y'";
-           res = false;
-         }
-
-         if(!params.has_path("plane/normal/z") ||
-            !params["plane/normal/z"].dtype().is_number())
-         {
-           info["errors"].append() = "Missing required numeric parameter 'plane/normal/z'";
-           res = false;
-         }
-
+         res = check_numeric("plane/point/x",params, info, true) && res;
+         res = check_numeric("plane/point/y",params, info, true) && res;
+         res = check_numeric("plane/point/z",params, info, true) && res;
+         res = check_numeric("plane/normal/x",params, info, true) && res;
+         res = check_numeric("plane/normal/y",params, info, true) && res;
+         res = check_numeric("plane/normal/z",params, info, true) && res;
       }
     }
 
-    if(params.has_child("invert"))
+    res = check_string("invert",params, info, false) && res;
+    res = check_string("topology",params, info, false) && res;
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("invert");
+    valid_paths.push_back("sphere/center/x");
+    valid_paths.push_back("sphere/center/y");
+    valid_paths.push_back("sphere/center/z");
+    valid_paths.push_back("sphere/radius");
+    valid_paths.push_back("box/min/x");
+    valid_paths.push_back("box/min/y");
+    valid_paths.push_back("box/min/z");
+    valid_paths.push_back("box/max/x");
+    valid_paths.push_back("box/max/y");
+    valid_paths.push_back("box/max/z");
+    valid_paths.push_back("plane/point/x");
+    valid_paths.push_back("plane/point/y");
+    valid_paths.push_back("plane/point/z");
+    valid_paths.push_back("plane/normal/x");
+    valid_paths.push_back("plane/normal/y");
+    valid_paths.push_back("plane/normal/z");
+    valid_paths.push_back("topology");
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
     {
-        if(!params["invert"].dtype().is_string() )
-        {
-          info["errors"].append() = "Optional string parameter 'invert' is the wrong type.";
-          res = false;
-        }
+      res = false;
+      info["errors"].append() = surprises;
     }
 
-    // TODO: check for other clip types
     return res;
 }
 
@@ -1636,8 +1547,6 @@ VTKHClip::verify_params(const conduit::Node &params,
 void
 VTKHClip::execute()
 {
-
-    ASCENT_INFO("We be clipping!");
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1737,29 +1646,20 @@ VTKHClipWithField::verify_params(const conduit::Node &params,
                              conduit::Node &info)
 {
     info.reset();
-    bool res = true;
+    bool res = check_numeric("clip_value",params, info, true);
+    res = check_string("field",params, info, true) && res;
+    res = check_string("invert",params, info, false) && res;
 
-    if(! params.has_child("clip_value") ||
-       ! params["clip_value"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'clip_value'";
-        res = false;
-    }
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("clip_value");
+    valid_paths.push_back("invert");
+    valid_paths.push_back("field");
+    std::string surprises = surprise_check(valid_paths, params);
 
-    if(! params.has_child("field") ||
-       ! params["field"].dtype().is_string() )
+    if(surprises != "")
     {
-        info["errors"].append() = "Missing required string parameter 'field'";
-        res = false;
-    }
-
-    if(params.has_child("invert"))
-    {
-        if(!params["invert"].dtype().is_string() )
-        {
-          info["errors"].append() = "Optional string parameter 'invert' is the wrong type.";
-          res = false;
-        }
+      res = false;
+      info["errors"].append() = surprises;
     }
 
     return res;
@@ -1770,8 +1670,6 @@ VTKHClipWithField::verify_params(const conduit::Node &params,
 void
 VTKHClipWithField::execute()
 {
-
-    ASCENT_INFO("We be clipping with a field!");
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1834,27 +1732,21 @@ VTKHIsoVolume::verify_params(const conduit::Node &params,
                              conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
-    if(! params.has_child("min_value") ||
-       ! params["min_value"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'min_value'";
-        res = false;
-    }
+    bool res = check_numeric("min_value",params, info, true);
+    res = check_numeric("max_value",params, info, true) && res;
+    res = check_string("field",params, info, true) && res;
 
-    if(! params.has_child("max_value") ||
-       ! params["max_value"].dtype().is_number() )
-    {
-        info["errors"].append() = "Missing required numeric parameter 'max_value'";
-        res = false;
-    }
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("min_value");
+    valid_paths.push_back("max_value");
+    valid_paths.push_back("field");
+    std::string surprises = surprise_check(valid_paths, params);
 
-    if(! params.has_child("field") ||
-       ! params["field"].dtype().is_string() )
+    if(surprises != "")
     {
-        info["errors"].append() = "Missing required string parameter 'field'";
-        res = false;
+      res = false;
+      info["errors"].append() = surprises;
     }
 
     return res;
@@ -1865,8 +1757,6 @@ VTKHIsoVolume::verify_params(const conduit::Node &params,
 void
 VTKHIsoVolume::execute()
 {
-
-    ASCENT_INFO("We be iso-voluming!");
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1930,9 +1820,10 @@ EnsureVTKM::execute()
     }
     else if(input(0).check_type<Node>())
     {
+        bool zero_copy = false;
         // convert from conduit to vtkm
         const Node *n_input = input<Node>(0);
-        vtkm::cont::DataSet  *res = VTKHDataAdapter::BlueprintToVTKmDataSet(*n_input);
+        vtkm::cont::DataSet  *res = VTKHDataAdapter::BlueprintToVTKmDataSet(*n_input, zero_copy);
         set_output<vtkm::cont::DataSet>(res);
     }
     else
@@ -1970,8 +1861,6 @@ VTKHBounds::declare_interface(Node &i)
 void
 VTKHBounds::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
-    ASCENT_INFO("VTK-h bounds");
     vtkm::Bounds *bounds = new vtkm::Bounds;
 
     if(!input(0).check_type<vtkh::DataSet>())
@@ -1982,7 +1871,6 @@ VTKHBounds::execute()
     vtkh::DataSet *data = input<vtkh::DataSet>(0);
     bounds->Include(data->GetGlobalBounds());
     set_output<vtkm::Bounds>(bounds);
-    RecordTime("Bounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -2014,7 +1902,6 @@ VTKHUnionBounds::declare_interface(Node &i)
 void
 VTKHUnionBounds::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
     if(!input(0).check_type<vtkm::Bounds>())
     {
         ASCENT_ERROR("'a' must be a vtkm::Bounds * instance");
@@ -2033,7 +1920,6 @@ VTKHUnionBounds::execute()
     result->Include(*bounds_a);
     result->Include(*bounds_b);
     set_output<vtkm::Bounds>(result);
-    RecordTime("UnionBounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -2065,9 +1951,6 @@ VTKHDomainIds::declare_interface(Node &i)
 void
 VTKHDomainIds::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
-    ASCENT_INFO("VTK-h domain_ids");
-
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("'in' must be a vtk-h dataset");
@@ -2081,7 +1964,6 @@ VTKHDomainIds::execute()
     result->insert(domain_ids.begin(), domain_ids.end());
 
     set_output<std::set<vtkm::Id> >(result);
-    RecordTime("DomainIDs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -2113,7 +1995,6 @@ VTKHUnionDomainIds::declare_interface(Node &i)
 void
 VTKHUnionDomainIds::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
     if(!input(0).check_type<std::set<vtkm::Id> >())
     {
         ASCENT_ERROR("'a' must be a std::set<vtkm::Id> * instance");
@@ -2134,8 +2015,6 @@ VTKHUnionDomainIds::execute()
     result->insert(dids_b->begin(), dids_b->end());
 
     set_output<std::set<vtkm::Id>>(result);
-
-    RecordTime("UnionIDs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -2160,13 +2039,16 @@ DefaultScene::verify_params(const conduit::Node &params,
                              conduit::Node &info)
 {
     info.reset();
-    bool res = true;
+    bool res = check_string("field",params, info, true);
 
-    if(! params.has_child("field") ||
-       ! params["field"].dtype().is_string() )
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
     {
-        info["errors"].append() = "Missing required string parameter 'field'";
-        res = false;
+      res = false;
+      info["errors"].append() = surprises;
     }
     return res;
 }
@@ -2186,14 +2068,10 @@ DefaultScene::declare_interface(Node &i)
 void
 DefaultScene::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
-    ASCENT_INFO("Creating a scene default renderer!");
-
     // inputs are bounds and set of domains
     vtkm::Bounds       *bounds_in     = input<vtkm::Bounds>(0);
     std::set<vtkm::Id> *domain_ids_set = input<std::set<vtkm::Id> >(1);
     vtkh::DataSet      *ds = input<vtkh::DataSet>(2);
-
     std::string field_name = params()["field"].as_string();
 
     std::stringstream ss;
@@ -2226,7 +2104,6 @@ DefaultScene::execute()
     renderer->SetField(field_name);
     scene.AddRenderer(cont);
     scene.Execute(renders);
-    RecordTime("DefaultSceneExecute", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -2298,42 +2175,56 @@ CreatePlot::declare_interface(Node &i)
 //-----------------------------------------------------------------------------
 bool
 CreatePlot::verify_params(const conduit::Node &params,
-                                  conduit::Node &info)
+                          conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
-
-    if(! params.has_child("type") ||
-       ! params["type"].dtype().is_string() )
-    {
-        info["errors"].append() = "Missing required string parameter 'type'";
-        res = false;
-    }
+    bool res = check_string("type",params, info, true);
 
     bool is_mesh = false;
-    if(params["type"].as_string() == "mesh")
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("type");
+    valid_paths.push_back("pipeline");
+
+    if(res)
     {
-      is_mesh = true;
+      if(params["type"].as_string() == "mesh")
+      {
+        is_mesh = true;
+      }
     }
 
     if(!is_mesh)
     {
-      if(! params.has_child("params") )
-      {
-          info["errors"].append() = "Missing required parameter 'params'";
-          res = false;
-          return res;
-      }
+      res &= check_string("field", params, info, true);
+      valid_paths.push_back("field");
+      valid_paths.push_back("points/radius");
+      valid_paths.push_back("points/radius_delta");
+      valid_paths.push_back("min_value");
+      valid_paths.push_back("max_value");
+    }
+    else
+    {
+      valid_paths.push_back("overlay");
+      valid_paths.push_back("show_internal");
+    }
 
-      conduit::Node plot_params = params["params"];
 
-      if(! plot_params.has_child("field") ||
-         ! plot_params["field"].dtype().is_string() )
-      {
-          info["errors"].append() = "Missing required string parameter 'params/field'";
-          res = false;
-      }
+    std::vector<std::string> ignore_paths;
+    ignore_paths.push_back("color_table");
+
+    std::string surprises = surprise_check(valid_paths, ignore_paths, params);
+
+    if(params.has_path("color_table"))
+    {
+      surprises += detail::check_color_table_surprises(params["color_table"]);
+    }
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
     }
 
     return res;
@@ -2343,23 +2234,50 @@ CreatePlot::verify_params(const conduit::Node &params,
 void
 CreatePlot::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
-
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("create_plot input must be a vtk-h dataset");
     }
 
     vtkh::DataSet *data = input<vtkh::DataSet>(0);
-    conduit::Node plot_params = params()["params"];
-
+    conduit::Node plot_params = params();
     std::string type = params()["type"].as_string();
+
+    if(data->GlobalIsEmpty(0))
+    {
+      ASCENT_INFO(type<<" plot yielded no data, i.e., no cells remain");
+    }
 
     vtkh::Renderer *renderer = nullptr;
 
     if(type == "pseudocolor")
     {
-      renderer = new vtkh::RayTracer();
+      bool is_point_mesh = data->IsPointMesh();
+      if(is_point_mesh)
+      {
+        vtkh::PointRenderer *p_renderer = new vtkh::PointRenderer();
+        p_renderer->UseCells();
+        if(plot_params.has_path("points/radius"))
+        {
+          float radius = plot_params["points/radius"].to_float32();
+          p_renderer->SetBaseRadius(radius);
+        }
+        // default is to use a constant radius
+        // if the radius delta is present, we will
+        // vary radii based on the scalar value
+        if(plot_params.has_path("points/radius_delta"))
+        {
+          float radius = plot_params["points/radius_delta"].to_float32();
+          p_renderer->UseVariableRadius(true);
+          p_renderer->SetRadiusDelta(radius);
+        }
+        renderer = p_renderer;
+      }
+      else
+      {
+        renderer = new vtkh::RayTracer();
+      }
+
     }
     else if(type == "volume")
     {
@@ -2374,12 +2292,10 @@ CreatePlot::execute()
         ASCENT_ERROR("create_plot unknown plot type '"<<type<<"'");
     }
 
-
-
     // get the plot params
     if(plot_params.has_path("color_table"))
     {
-      vtkm::cont::ColorTable color_table =  detail::parse_color_table(plot_params["color_table"]);
+      vtkm::cont::ColorTable color_table =  parse_color_table(plot_params["color_table"]);
       renderer->SetColorTable(color_table);
     }
 
@@ -2398,7 +2314,12 @@ CreatePlot::execute()
 
     if(plot_params.has_path("field"))
     {
-      renderer->SetField(plot_params["field"].as_string());
+      std::string field_name = plot_params["field"].as_string();
+      if(!data->GlobalFieldExists(field_name))
+      {
+        ASCENT_WARN("Plot variable '"<<field_name<<"' does not exist");
+      }
+      renderer->SetField(field_name);
     }
 
     if(type == "mesh")
@@ -2442,7 +2363,6 @@ CreatePlot::execute()
                                                                          renderer);
     set_output<detail::RendererContainer>(container);
 
-    RecordTime("RenderPlot", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -2499,7 +2419,6 @@ ExecScene::declare_interface(conduit::Node &i)
 void
 ExecScene::execute()
 {
-    auto startT = std::chrono::steady_clock::now();
     if(!input(0).check_type<detail::AscentScene>())
     {
         ASCENT_ERROR("'scene' must be a AscentScene * instance");
@@ -2513,12 +2432,188 @@ ExecScene::execute()
     detail::AscentScene *scene = input<detail::AscentScene>(0);
     std::vector<vtkh::Render> * renders = input<std::vector<vtkh::Render>>(1);
     scene->Execute(*renders);
-    RecordTime("ExecScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+VTKHLagrangian::VTKHLagrangian()
+:Filter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHLagrangian::~VTKHLagrangian()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHLagrangian::declare_interface(Node &i)
+{
+    i["type_name"]   = "vtkh_lagrangian";
+    i["port_names"].append() = "in";
+    i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool
+VTKHLagrangian::verify_params(const conduit::Node &params,
+                        conduit::Node &info)
+{
+    info.reset();
+
+    bool res = check_string("field",params, info, true);
+    res &= check_numeric("step_size", params, info, true);
+    res &= check_numeric("write_frequency", params, info, true);
+    res &= check_numeric("cust_res", params, info, true);
+    res &= check_numeric("x_res", params, info, true);
+    res &= check_numeric("y_res", params, info, true);
+    res &= check_numeric("z_res", params, info, true);
+
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("step_size");
+    valid_paths.push_back("write_frequency");
+    valid_paths.push_back("cust_res");
+    valid_paths.push_back("x_res");
+    valid_paths.push_back("y_res");
+    valid_paths.push_back("z_res");
+
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
+    }
+    return res;
+}
 
 
 //-----------------------------------------------------------------------------
+void
+VTKHLagrangian::execute()
+{
+    vtkh::DataSet *data = nullptr;
+    if(input(0).check_type<vtkh::DataSet>())
+    {
+      data = input<vtkh::DataSet>(0);
+    }
+    else if(input(0).check_type<Node>())
+    {
+      const Node *n_input = input<Node>(0);
+      data = VTKHDataAdapter::BlueprintToVTKHDataSet(*n_input);
+    }
+    else
+    {
+        ASCENT_ERROR("vtkh_lagrangian input must be a< vtkh::DataSet> or <Node>");
+    }
+
+    std::string field_name = params()["field"].as_string();
+    double step_size = params()["step_size"].to_float64();
+    int write_frequency = params()["write_frequency"].to_int32();
+    int cust_res = params()["cust_res"].to_int32();
+    int x_res = params()["x_res"].to_int32();
+    int y_res = params()["y_res"].to_int32();
+    int z_res = params()["z_res"].to_int32();
+
+    vtkh::Lagrangian lagrangian;
+
+    lagrangian.SetInput(data);
+    lagrangian.SetField(field_name);
+    lagrangian.SetStepSize(step_size);
+    lagrangian.SetWriteFrequency(write_frequency);
+    lagrangian.SetCustomSeedResolution(cust_res);
+    lagrangian.SetSeedResolutionInX(x_res);
+    lagrangian.SetSeedResolutionInY(y_res);
+    lagrangian.SetSeedResolutionInZ(z_res);
+    lagrangian.Update();
+
+    vtkh::DataSet *lagrangian_output = lagrangian.GetOutput();
+
+    set_output<vtkh::DataSet>(lagrangian_output);
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHLog::VTKHLog()
+:Filter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHLog::~VTKHLog()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHLog::declare_interface(Node &i)
+{
+    i["type_name"]   = "vtkh_log";
+    i["port_names"].append() = "in";
+    i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool
+VTKHLog::verify_params(const conduit::Node &params,
+                        conduit::Node &info)
+{
+    info.reset();
+
+    bool res = check_string("field",params, info, true);
+    res &= check_string("output_name",params, info, false);
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("output_name");
+
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
+    }
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHLog::execute()
+{
+
+    if(!input(0).check_type<vtkh::DataSet>())
+    {
+        ASCENT_ERROR("vtkh_log input must be a vtk-h dataset");
+    }
+
+    std::string field_name = params()["field"].as_string();
+    vtkh::DataSet *data = input<vtkh::DataSet>(0);
+    vtkh::Log logger;
+    logger.SetInput(data);
+    logger.SetField(field_name);
+    if(params().has_path("output_name"))
+    {
+      logger.SetResultField(params()["output_name"].as_string());
+    }
+
+    logger.Update();
+
+    vtkh::DataSet *log_output = logger.GetOutput();
+
+    set_output<vtkh::DataSet>(log_output);
+}
+
+//-----------------------------------------------------------------------------
+
 VTKHNoOp::VTKHNoOp()
 :Filter()
 {
@@ -2546,13 +2641,18 @@ VTKHNoOp::verify_params(const conduit::Node &params,
                         conduit::Node &info)
 {
     info.reset();
-    bool res = true;
 
-    if(! params.has_child("field") ||
-       ! params["field"].dtype().is_string() )
+    bool res = check_string("field",params, info, true);
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
     {
-        info["errors"].append() = "Missing required string parameter 'field'";
-        res = false;
+      res = false;
+      info["errors"].append() = surprises;
     }
 
     return res;
@@ -2563,7 +2663,6 @@ void
 VTKHNoOp::execute()
 {
 
-    ASCENT_INFO("Doing nothing");
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("vtkh_no_op input must be a vtk-h dataset");
@@ -2583,8 +2682,8 @@ VTKHNoOp::execute()
 
     set_output<vtkh::DataSet>(noop_output);
 }
-//-----------------------------------------------------------------------------
 
+//-----------------------------------------------------------------------------
 };
 //-----------------------------------------------------------------------------
 // -- end ascent::runtime::filters --

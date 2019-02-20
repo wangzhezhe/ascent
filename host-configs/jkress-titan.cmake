@@ -88,16 +88,16 @@ set(ENABLE_CUDA OFF CACHE PATH "")
 
 
 # conduit 
-set(ASCENT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/ompBuild/ascent/install-release" CACHE PATH "")
+set(ASCENT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/ascent/install-release" CACHE PATH "")
 
 # conduit 
-set(CONDUIT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/ompBuild/conduit/install" CACHE PATH "")
+set(CONDUIT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/conduit/install" CACHE PATH "")
 
 # icet 
 set(ICET_DIR "/disk2TB/proj/alpine/icet/install" CACHE PATH "")
 
 #vtk-h
-set(VTKH_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/ompBuild/vtk-h/install" CACHE PATH "")
+set(VTKH_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/vtk-h/install" CACHE PATH "")
 
 #
 # vtkm
@@ -108,14 +108,14 @@ set(ASCENT_VTKM_USE_TBB OFF CACHE PATH "")
 #set(TBB_DIR "/usr/include" CACHE PATH "")
 
 # vtkm
-set(VTKM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/ompBuild/vtk-m/install" CACHE PATH "")
+set(VTKM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/vtk-m/install" CACHE PATH "")
 
 # HDF5 support (optional)
 # hdf5
 set(HDF5_DIR "/opt/cray/hdf5/1.10.0.3/gnu/4.9" CACHE PATH "")
 set(HDF5_INCLUDE_DIRS "/opt/cray/hdf5/1.10.0.3/gnu/4.9/include" CACHE PATH "")
 
-set(ADIOS_DIR "/lustre/atlas2/csc143/proj-shared/jkress/titan/ascent-files/ADIOS/install.xk6.gnu" CACHE PATH "")
+set(ADIOS_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ADIOS/install.xk6.gnu" CACHE PATH "")
 
 #SPHINX documentation building
 #set("SPHINX_EXECUTABLE" "/path/to/sphinx-build" CACHE PATH "")

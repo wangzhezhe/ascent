@@ -74,6 +74,10 @@ set(MPIEXEC "/opt/cray/alps/5.2.4-2.0502.9950.37.1.gem/bin/aprun" CACHE PATH "")
 
 set(MPIEXEC_NUMPROC_FLAG -n CACHE PATH "")
 
+##no shared libs
+set(BUILD_SHARED_LIBS OFF CACHE PATH "")
+set(ENABLE_SHARED_LIBS OFF CACHE PATH "")
+
 ##python
 set(PYTHON_DIR "/sw/xk6/python/2.7.9/sles11.3_gnu4.3.4/" CACHE PATH "")
 set(ENABLE_PYTHON OFF CACHE PATH "")

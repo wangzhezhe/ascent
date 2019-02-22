@@ -98,6 +98,8 @@
 #endif
 
 #include <stdio.h>
+#include <chrono>
+#include <sys/time.h>
 
 using namespace conduit;
 using namespace std;
@@ -709,6 +711,27 @@ std::map<std::string, CinemaManager> CinemaDatabases::m_databases;
 // -- end namespace detail --
 //-----------------------------------------------------------------------------
 
+static std::ofstream *timingInfo = NULL;    
+void RecordTime(const std::string &nm, double time)
+{
+    int rank = 0, numRanks = 0;
+#ifdef ASCENT_MPI_ENABLED
+    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+    MPI_Comm_rank(mpi_comm, &rank);
+    MPI_Comm_size(mpi_comm, &numRanks);
+#endif
+    
+    if (timingInfo == NULL)
+    {
+        timingInfo = new ofstream;
+        char nm[32];
+        sprintf(nm, "timing.%d.out", rank);
+        timingInfo->open(nm, ofstream::out);
+    }
+    (*timingInfo)<<"ASCENT_"<<nm<<"_"<<rank<<"_"<<numRanks<<" "<<time<<endl;
+    //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
+}
+
 //-----------------------------------------------------------------------------
 EnsureVTKH::EnsureVTKH()
 :Filter()
@@ -832,6 +855,7 @@ VTKHMarchingCubes::verify_params(const conduit::Node &params,
 void
 VTKHMarchingCubes::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -866,6 +890,8 @@ VTKHMarchingCubes::execute()
 
     vtkh::DataSet *iso_output = marcher.GetOutput();
     set_output<vtkh::DataSet>(iso_output);
+
+    RecordTime("ContourFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -918,6 +944,7 @@ VTKHVectorMagnitude::verify_params(const conduit::Node &params,
 void
 VTKHVectorMagnitude::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -941,6 +968,8 @@ VTKHVectorMagnitude::execute()
 
     vtkh::DataSet *mag_output = mag.GetOutput();
     set_output<vtkh::DataSet>(mag_output);
+
+    RecordTime("VectorMagnitudeFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -999,6 +1028,7 @@ VTKH3Slice::verify_params(const conduit::Node &params,
 void
 VTKH3Slice::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1065,6 +1095,8 @@ VTKH3Slice::execute()
     vtkh::DataSet *slice_output = slicer.GetOutput();
 
     set_output<vtkh::DataSet>(slice_output);
+
+    RecordTime("ThreeSliceFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1126,6 +1158,7 @@ VTKHSlice::verify_params(const conduit::Node &params,
 void
 VTKHSlice::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1154,6 +1187,8 @@ VTKHSlice::execute()
     vtkh::DataSet *slice_output = slicer.GetOutput();
 
     set_output<vtkh::DataSet>(slice_output);
+
+    RecordTime("SliceFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1210,7 +1245,7 @@ VTKHThreshold::verify_params(const conduit::Node &params,
 void
 VTKHThreshold::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1239,6 +1274,8 @@ VTKHThreshold::execute()
     vtkh::DataSet *thresh_output = thresher.GetOutput();
 
     set_output<vtkh::DataSet>(thresh_output);
+
+    RecordTime("ThresholdFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1302,7 +1339,7 @@ DefaultRender::verify_params(const conduit::Node &params,
 void
 DefaultRender::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkm::Bounds>())
     {
@@ -1426,6 +1463,8 @@ DefaultRender::execute()
       renders->push_back(render);
     }
     set_output<std::vector<vtkh::Render>>(renders);
+
+    RecordTime("DefaultRender", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 //-----------------------------------------------------------------------------
@@ -1547,6 +1586,7 @@ VTKHClip::verify_params(const conduit::Node &params,
 void
 VTKHClip::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1616,6 +1656,8 @@ VTKHClip::execute()
     vtkh::DataSet *clip_output = clipper.GetOutput();
 
     set_output<vtkh::DataSet>(clip_output);
+
+    RecordTime("ClipFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 //-----------------------------------------------------------------------------
@@ -1670,6 +1712,7 @@ VTKHClipWithField::verify_params(const conduit::Node &params,
 void
 VTKHClipWithField::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1702,6 +1745,8 @@ VTKHClipWithField::execute()
     vtkh::DataSet *clip_output = clipper.GetOutput();
 
     set_output<vtkh::DataSet>(clip_output);
+
+    RecordTime("ClipWithFieldFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 //-----------------------------------------------------------------------------
@@ -1757,6 +1802,7 @@ VTKHIsoVolume::verify_params(const conduit::Node &params,
 void
 VTKHIsoVolume::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkh::DataSet>())
     {
@@ -1781,6 +1827,8 @@ VTKHIsoVolume::execute()
     vtkh::DataSet *clip_output = clipper.GetOutput();
 
     set_output<vtkh::DataSet>(clip_output);
+
+    RecordTime("IsoVolumeFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 
@@ -1861,6 +1909,8 @@ VTKHBounds::declare_interface(Node &i)
 void
 VTKHBounds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     vtkm::Bounds *bounds = new vtkm::Bounds;
 
     if(!input(0).check_type<vtkh::DataSet>())
@@ -1871,6 +1921,8 @@ VTKHBounds::execute()
     vtkh::DataSet *data = input<vtkh::DataSet>(0);
     bounds->Include(data->GetGlobalBounds());
     set_output<vtkm::Bounds>(bounds);
+
+    RecordTime("Bounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -1902,6 +1954,8 @@ VTKHUnionBounds::declare_interface(Node &i)
 void
 VTKHUnionBounds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     if(!input(0).check_type<vtkm::Bounds>())
     {
         ASCENT_ERROR("'a' must be a vtkm::Bounds * instance");
@@ -1920,6 +1974,8 @@ VTKHUnionBounds::execute()
     result->Include(*bounds_a);
     result->Include(*bounds_b);
     set_output<vtkm::Bounds>(result);
+
+    RecordTime("UnionBounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -1951,6 +2007,8 @@ VTKHDomainIds::declare_interface(Node &i)
 void
 VTKHDomainIds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("'in' must be a vtk-h dataset");
@@ -1964,6 +2022,8 @@ VTKHDomainIds::execute()
     result->insert(domain_ids.begin(), domain_ids.end());
 
     set_output<std::set<vtkm::Id> >(result);
+
+    RecordTime("DomainIDs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -1995,6 +2055,8 @@ VTKHUnionDomainIds::declare_interface(Node &i)
 void
 VTKHUnionDomainIds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     if(!input(0).check_type<std::set<vtkm::Id> >())
     {
         ASCENT_ERROR("'a' must be a std::set<vtkm::Id> * instance");
@@ -2015,6 +2077,8 @@ VTKHUnionDomainIds::execute()
     result->insert(dids_b->begin(), dids_b->end());
 
     set_output<std::set<vtkm::Id>>(result);
+
+    RecordTime("UnionIDs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -2068,6 +2132,8 @@ DefaultScene::declare_interface(Node &i)
 void
 DefaultScene::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     // inputs are bounds and set of domains
     vtkm::Bounds       *bounds_in     = input<vtkm::Bounds>(0);
     std::set<vtkm::Id> *domain_ids_set = input<std::set<vtkm::Id> >(1);
@@ -2104,6 +2170,8 @@ DefaultScene::execute()
     renderer->SetField(field_name);
     scene.AddRenderer(cont);
     scene.Execute(renders);
+
+    RecordTime("DefaultSceneExecute", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -2234,6 +2302,8 @@ CreatePlot::verify_params(const conduit::Node &params,
 void
 CreatePlot::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     if(!input(0).check_type<vtkh::DataSet>())
     {
         ASCENT_ERROR("create_plot input must be a vtk-h dataset");
@@ -2363,6 +2433,7 @@ CreatePlot::execute()
                                                                          renderer);
     set_output<detail::RendererContainer>(container);
 
+    RecordTime("RenderPlot", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -2419,6 +2490,8 @@ ExecScene::declare_interface(conduit::Node &i)
 void
 ExecScene::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     if(!input(0).check_type<detail::AscentScene>())
     {
         ASCENT_ERROR("'scene' must be a AscentScene * instance");
@@ -2432,6 +2505,8 @@ ExecScene::execute()
     detail::AscentScene *scene = input<detail::AscentScene>(0);
     std::vector<vtkh::Render> * renders = input<std::vector<vtkh::Render>>(1);
     scene->Execute(*renders);
+
+    RecordTime("ExecScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------

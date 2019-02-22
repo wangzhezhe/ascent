@@ -225,7 +225,7 @@ ADIOS::verify_params(const conduit::Node &params,
 void
 ADIOS::execute()
 {
-    if(!input("in").check_type<Node>())
+    if(!input(0).check_type<Node>())
     {
         // error
         ASCENT_ERROR("adios filter requires a conduit::Node input");
@@ -336,9 +336,10 @@ ADIOS::execute()
     adios_define_schema_version(adiosGroup, (char*)"1.1");
 
     //Fetch input data
-    Node *blueprint_data = input<Node>("in");
+    Node *node_input = input<Node>(0);
+    std::cerr << "Num input domains we received " << node_input->number_of_children() << std::endl;
 
-    NodeConstIterator itr = (*blueprint_data)["coordsets"].children();
+    NodeConstIterator itr = (*node_input)["coordsets"].children();
     while (itr.has_next())
     {
         const Node &coordSet = itr.next();
@@ -367,16 +368,16 @@ ADIOS::execute()
         }
     }
 
-    if (blueprint_data->has_child("fields"))
+    if (node_input->has_child("fields"))
     {
         // if we don't specify a topology, find the first topology ...
-        NodeConstIterator itr = (*blueprint_data)["topologies"].children();
+        NodeConstIterator itr = (*node_input)["topologies"].children();
         itr.next();
         std::string  topo_name = itr.name();
 
         // as long as mesh blueprint verify true, we access data without fear.
-        const Node &n_topo   = (*blueprint_data)["topologies"][topo_name];
-        const Node &fields = (*blueprint_data)["fields"];
+        const Node &n_topo   = (*node_input)["topologies"][topo_name];
+        const Node &fields = (*node_input)["fields"];
         NodeConstIterator fields_itr = fields.children();
 
         while(fields_itr.has_next())

@@ -332,7 +332,8 @@ dumpSummaryStats2(stats, fields, selector, outputFile)
 dumpRawData(stats, outputFile)
 
 if couplingType != 'noVis' :
-    dumpHistogramsAtStep(stats[98], fields, outputFileName, couplingType)
+    if ENDSKIP >= 98 :
+        dumpHistogramsAtStep(stats[98], fields, outputFileName, couplingType)
 dumpVisTimeHistograms(stats[SKIP:ENDSKIP], couplingType)
 
 outputFile.close()

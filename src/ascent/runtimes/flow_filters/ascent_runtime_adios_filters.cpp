@@ -336,10 +336,11 @@ ADIOS::execute()
     adios_define_schema_version(adiosGroup, (char*)"1.1");
 
     //Fetch input data
+    //!! Assuming a single domain
     Node *node_input = input<Node>(0);
-    std::cerr << "Num input domains we received " << node_input->number_of_children() << std::endl;
+    Node &child_domain = node_input->child(0);
 
-    NodeConstIterator itr = (*node_input)["coordsets"].children();
+    NodeConstIterator itr = child_domain["coordsets"].children();
     while (itr.has_next())
     {
         const Node &coordSet = itr.next();
@@ -368,16 +369,16 @@ ADIOS::execute()
         }
     }
 
-    if (node_input->has_child("fields"))
+    if (child_domain.has_child("fields"))
     {
         // if we don't specify a topology, find the first topology ...
-        NodeConstIterator itr = (*node_input)["topologies"].children();
+        NodeConstIterator itr = child_domain["topologies"].children();
         itr.next();
         std::string  topo_name = itr.name();
 
         // as long as mesh blueprint verify true, we access data without fear.
-        const Node &n_topo   = (*node_input)["topologies"][topo_name];
-        const Node &fields = (*node_input)["fields"];
+        const Node &n_topo   = child_domain["topologies"][topo_name];
+        const Node &fields = child_domain["fields"];
         NodeConstIterator fields_itr = fields.children();
 
         while(fields_itr.has_next())

@@ -93,9 +93,11 @@ SUBROUTINE hydro
         call sleep(int(wait_time))
     END IF
 
-    IF(visit_frequency.NE.0) THEN
+    IF (visit_frequency.NE.0) THEN
       timer_visit_start = timer()
-      IF(MOD(step, visit_frequency).EQ.0) CALL visit(my_ascent)
+      IF (step.GE.visit_init_delay) THEN
+        IF(MOD(step, visit_frequency).EQ.0) CALL visit(my_ascent)
+      ENDIF
       time_visit = timer() - timer_visit_start
     ENDIF
 

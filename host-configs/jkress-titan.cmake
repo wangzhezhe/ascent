@@ -76,7 +76,7 @@ set(MPIEXEC_NUMPROC_FLAG -n CACHE PATH "")
 
 ##no shared libs
 set(BUILD_SHARED_LIBS OFF CACHE PATH "")
-set(ENABLE_SHARED_LIBS OFF CACHE PATH "")
+#set(ENABLE_SHARED_LIBS OFF CACHE PATH "")
 
 ##python
 set(PYTHON_DIR "/sw/xk6/python/2.7.9/sles11.3_gnu4.3.4/" CACHE PATH "")

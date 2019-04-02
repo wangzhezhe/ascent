@@ -119,6 +119,8 @@ MODULE definitions_module
                   ,dtdiv
 
    INTEGER      :: wait_time
+   
+   INTEGER      :: visit_init_delay
 
    INTEGER      :: visit_frequency   &
                   ,summary_frequency

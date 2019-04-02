@@ -768,7 +768,11 @@ ADIOS::FieldVariable(const string &fieldName, const Node &node, const Node &n_to
         return false;
     }
 
+    //!!This is only good when one variable is passed to adios
+    //its a vector
+    //node["values"].number_of_children()
     const Node &field_values = node["values"];
+    //field_values.schema().print();
     const double *vals = field_values.as_double_ptr();
 
     /*

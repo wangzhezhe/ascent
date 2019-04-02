@@ -4,14 +4,17 @@ import os, sys, glob
 
 SKIP = 1
 
-if len(sys.argv) != 6 :
-    print 'usage: %s timing-file-pattern app-output-file output-file tight/loose/noVis numSteps' % sys.argv[0]
+if len(sys.argv) != 8 :
+    print 'usage: %s timing-file-pattern vtkh-time-pattern app-output-file output-file tight/loose/noVis iso/volume/advect numSteps' % sys.argv[0]
     sys.exit(-1)
 
 inputFilePattern = sys.argv[1]
 timingFiles = glob.glob('%s' % inputFilePattern)
-couplingType = sys.argv[4]
-ENDSKIP = int(sys.argv[5])
+vtkhFilePattern = sys.argv[2]
+vtkhFiles = glob.glob('%s' % vtkhFilePattern)
+couplingType = sys.argv[5]
+visType = sys.argv[6]
+ENDSKIP = int(sys.argv[7])
 
 if couplingType != 'noVis' :
     if len(timingFiles) == 0 :
@@ -222,7 +225,7 @@ def ParseInsituVis(tf, stats) :
 
 def ParseVisFiles(timingFiles, stats) :
     for tf in timingFiles :
-        if '.vis.' in tf :
+        if '.vis.' in tf or 'vtkh' in tf:
             stats = ParseVisService(tf, stats)
         else :
             stats = ParseInsituVis(tf, stats)
@@ -305,24 +308,44 @@ def dumpVisTimeHistograms(stats, couplingType) :
 
 stats = []
 
-appOutputFile = sys.argv[2]
-outputFileName = sys.argv[3]
+appOutputFile = sys.argv[3]
+outputFileName = sys.argv[4]
 outputFile = open(outputFileName, 'w')
 
 stats = ParseAppFile(appOutputFile, stats)
 if couplingType != 'noVis' :
     stats = ParseVisFiles(timingFiles, stats)
+    stats = ParseVisFiles(vtkhFiles, stats)
 
 print len(stats)
 #print stats[0]
 #print stats[1]
 if couplingType == 'tight' :
-#    fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', ['Render', ['RenderPlot', 'Bounds', 'DomainIDs', 'DefaultRender']]]
-    fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', 'ExecScene']
-    selector = [0, 0, 'max', 'max', 'max']
+    if visType == 'iso' :
+        fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', 'ExecScene']
+        selector = [0, 0, 'max', 'max', 'max']
+    elif visType == 'volume' :
+        fields = ['appTime','visTime','PreExecute','DoExecute','Composite','ExecScene']
+        selector = [0, 0, 'max', 'max', 'max', 'max']
+    elif visType == 'advect' :
+        fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', 'ExecScene']
+        selector = [0, 0, 'max', 'max', 'max']
+    else :
+        print 'Unsupported visualization operation',  type(visType)
+        sys.exit(-1)
 elif couplingType == 'loose' :
-    fields = ['appTime', 'visTime', 'read', 'point_average', 'contour', 'render', 'ts_time']
-    selector = [0, 0, 'max', 'max', 'max', 'max', 'max']
+    if visType == 'iso' :
+        fields = ['appTime', 'visTime', 'read', 'point_average', 'contour', 'render', 'ts_time']
+        selector = [0, 0, 'max', 'max', 'max', 'max', 'max']
+    elif visType == 'volume' :
+        fields = ['appTime', 'visTime', 'read', 'render', 'PreExecute','DoExecute','Composite','ts_time']
+        selector = [0, 0, 'max', 'max', 'max', 'max', 'max', 'max']
+    elif visType == 'advect' :
+        fields = ['appTime', 'visTime', 'read', 'point_average', 'contour', 'render', 'ts_time']
+        selector = [0, 0, 'max', 'max', 'max', 'max', 'max']
+    else :
+        print 'Unsupported visualization operation',  type(visType)
+        sys.exit(-1)
 else :
     fields = ['appTime', 'visTime']
     selector = [0, 0]

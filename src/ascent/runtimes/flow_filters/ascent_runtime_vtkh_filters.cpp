@@ -87,11 +87,13 @@
 #include <vtkh/filters/MarchingCubes.hpp>
 #include <vtkh/filters/NoOp.hpp>
 #include <vtkh/filters/Lagrangian.hpp>
+#include <vtkh/filters/ParticleAdvection.hpp>
 #include <vtkh/filters/Log.hpp>
 #include <vtkh/filters/Slice.hpp>
 #include <vtkh/filters/Threshold.hpp>
 #include <vtkh/filters/VectorMagnitude.hpp>
 #include <vtkm/cont/DataSet.h>
+#include <vtkm/filter/CleanGrid.h>
 
 #include <ascent_vtkh_data_adapter.hpp>
 #include <ascent_runtime_conduit_to_vtkm_parsing.hpp>
@@ -971,6 +973,124 @@ VTKHVectorMagnitude::execute()
 
     RecordTime("VectorMagnitudeFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
+
+
+//-----------------------------------------------------------------------------
+VTKHStreamline::VTKHStreamline()
+:Filter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHStreamline::~VTKHStreamline()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHStreamline::declare_interface(Node &i)
+{
+    i["type_name"]   = "vtkh_streamline";
+    i["port_names"].append() = "in";
+    i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool
+VTKHStreamline::verify_params(const conduit::Node &params,
+                                 conduit::Node &info)
+{
+    info.reset();
+    bool res = true;
+
+    if(! params.has_child("field") ||
+       ! params["field"].dtype().is_string() )
+    {
+        info["errors"].append() = "Missing required string parameter 'field'";
+        res = false;
+    }
+
+    if(params.has_child("output_name") &&
+       ! params["output_name"].dtype().is_string() )
+    {
+        info["errors"].append() = "Optional parameter 'output_name' must be a string";
+        res = false;
+    }
+
+    cout<<"Need to add seed params"<<endl;
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHStreamline::execute()
+{
+    auto startT = std::chrono::steady_clock::now();
+
+    //ASCENT_INFO("We be streamlining");
+    if(!input(0).check_type<vtkh::DataSet>())
+    {
+        ASCENT_ERROR("vtkh_streamline input must be a vtk-h dataset");
+    }
+
+    vtkh::ParticleAdvection streamline;
+
+    std::string field_name = params()["field"].as_string();
+    double stepSize = params()["stepSize"].as_float64();
+    int maxSteps = params()["maxSteps"].as_int64();
+    std::string seedMethod = params()["seedMethod"].as_string();
+
+
+    if (seedMethod == "randomWhole")
+    {
+        int numSeeds = params()["numSeeds"].as_int64();
+        streamline.SetSeedsRandomWhole(numSeeds);
+    }
+    else if (seedMethod == "randomBlock")
+    {
+        int numSeeds = params()["numSeeds"].as_int64();
+        streamline.SetSeedsRandomBlock(numSeeds);
+    }
+    else if (seedMethod == "randomBox")
+    {
+        int numSeeds = params()["numSeeds"].as_int64();
+        const Node &seedBox = params()["seedBox"];
+        double x0 = seedBox["x0"].as_float64();
+        double x1 = seedBox["x1"].as_float64();
+        double y0 = seedBox["y0"].as_float64();
+        double y1 = seedBox["y1"].as_float64();
+        double z0 = seedBox["z0"].as_float64();
+        double z1 = seedBox["z1"].as_float64();
+        vtkm::Bounds box(x0,x1, y0,y1, z0,z1);
+        streamline.SetSeedsRandomBox(numSeeds, box);
+    }
+    else if (seedMethod == "point")
+    {
+        const Node &seedPoint = params()["seedPoint"];
+        double x = seedPoint["x"].as_float64();
+        double y = seedPoint["y"].as_float64();
+        double z = seedPoint["z"].as_float64();
+        vtkm::Vec<double,3> pt(x,y,z);
+        streamline.SetSeedPoint(pt);
+    }
+
+    vtkh::DataSet *data = input<vtkh::DataSet>(0);
+    streamline.SetInput(data);
+    streamline.SetField(field_name);
+    streamline.SetMaxSteps(maxSteps);
+    streamline.SetStepSize(stepSize);
+
+    vtkh::DataSet *streamline_output = NULL;
+    streamline.Update();
+    streamline_output = streamline.GetOutput();
+    set_output<vtkh::DataSet>(streamline_output);
+
+    RecordTime("StreamlineFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+}
+
 
 //-----------------------------------------------------------------------------
 VTKH3Slice::VTKH3Slice()

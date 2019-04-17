@@ -143,6 +143,19 @@ public:
 };    
 
 //-----------------------------------------------------------------------------
+class VTKHStreamline : public ::flow::Filter
+{
+public:
+    VTKHStreamline();
+    virtual ~VTKHStreamline();
+
+     virtual void   declare_interface(conduit::Node &i);
+    virtual bool   verify_params(const conduit::Node &params,
+                                 conduit::Node &info);
+    virtual void   execute();
+};
+
+//-----------------------------------------------------------------------------
 class VTKHSlice : public ::flow::Filter
 {
 public:

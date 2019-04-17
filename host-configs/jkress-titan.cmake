@@ -82,6 +82,7 @@ set(BUILD_SHARED_LIBS OFF CACHE PATH "")
 set(PYTHON_DIR "/sw/xk6/python/2.7.9/sles11.3_gnu4.3.4/" CACHE PATH "")
 set(ENABLE_PYTHON OFF CACHE PATH "")
 
+set(MFEM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/advection/ascent/mfem/mfem" CACHE PATH "")
 
 
 # CUDA support
@@ -92,16 +93,13 @@ set(ENABLE_CUDA OFF CACHE PATH "")
 
 
 # conduit 
-set(ASCENT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/ascent/install-release" CACHE PATH "")
+set(ASCENT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/advection/ascent/install-release" CACHE PATH "")
 
 # conduit 
 set(CONDUIT_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/conduit/install" CACHE PATH "")
 
-# icet 
-set(ICET_DIR "/disk2TB/proj/alpine/icet/install" CACHE PATH "")
-
 #vtk-h
-set(VTKH_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/vtk-h/install" CACHE PATH "")
+set(VTKH_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/advection/vtk-h/install" CACHE PATH "")
 
 #
 # vtkm
@@ -112,7 +110,7 @@ set(ASCENT_VTKM_USE_TBB OFF CACHE PATH "")
 #set(TBB_DIR "/usr/include" CACHE PATH "")
 
 # vtkm
-set(VTKM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/ompBuild/vtk-m/install" CACHE PATH "")
+set(VTKM_DIR "/lustre/atlas2/csc143/proj-shared/jkress/ascent-files/advection/vtk-m/install" CACHE PATH "")
 
 # HDF5 support (optional)
 # hdf5

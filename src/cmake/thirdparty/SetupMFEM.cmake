@@ -118,7 +118,6 @@ find_library(MFEM_LIBRARIES LIBRARIES NAMES mfem
              NO_SYSTEM_ENVIRONMENT_PATH
              NO_CMAKE_SYSTEM_PATH)
 
-
 if(MFEM_LIBRARIES)
     include(FindPackageHandleStandardArgs)
     # handle the QUIETLY and REQUIRED arguments and set MFEM_FOUND to TRUE

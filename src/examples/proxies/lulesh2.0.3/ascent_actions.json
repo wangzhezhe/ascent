@@ -1,22 +1,25 @@
 [
-  {
-    "action": "add_scenes",
-    "scenes":
-    {
-      "s1":
+   {
+      "action": "add_pipelines",
+      "pipelines":
       {
-        "plots":
+        "pl1":
         {
-          "p1":
+          "f1":
           {
-            "type": "pseudocolor",
-            "field": "e"
+            "type": "streamline",
+            "params":
+            {
+              "field": "velocity",
+              "seedMethod": "randomWhole",
+              "maxSteps": 100,
+              "stepSize": 0.1,
+              "numSeeds": 10
+            }
           }
-        },
-        "image_prefix": "energy_%04d"
-      }
-    }
-  },
+       }
+     }
+    },
   {
     "action": "execute"
   },

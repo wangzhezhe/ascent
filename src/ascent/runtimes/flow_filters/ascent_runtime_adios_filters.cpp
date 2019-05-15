@@ -166,6 +166,8 @@ ADIOS::ADIOS()
     step = 0;
     globalDims.resize(4);
     localDims.resize(4);
+    localDimsCon.resize(1);
+    globalDims.resize(1);
     offset.resize(4);
     for (int i = 0; i < 4; i++)
         globalDims[i] = localDims[i] = offset[i] = 0;
@@ -340,10 +342,16 @@ ADIOS::execute()
     Node *node_input = input<Node>(0);
     Node &child_domain = node_input->child(0);
 
+//cerr << "Printing main node schema" << endl;
+//node_input->schema().print();
+//cerr << endl;
+
     NodeConstIterator itr = child_domain["coordsets"].children();
-    while (itr.has_next())
+    NodeConstIterator topoItr = child_domain["topologies"].children();
+    while (itr.has_next() && topoItr.has_next())
     {
         const Node &coordSet = itr.next();
+        const Node &topoSet = topoItr.next();
         std::string coordSetType = coordSet["type"].as_string();
 
         if (coordSetType == "uniform")
@@ -358,7 +366,7 @@ ADIOS::execute()
         }
         else if (coordSetType == "explicit")
         {
-            ExplicitMeshSchema(coordSet);
+            ExplicitMeshSchema(coordSet, topoSet);
             explicitMesh = true;
             break;
         }
@@ -419,10 +427,11 @@ ADIOS::UniformMeshSchema(const Node &node)
 
 //-----------------------------------------------------------------------------
 bool
-ADIOS::CalcExplicitMeshInfo(const conduit::Node &node, vector<vector<double>> &XYZ)
+ADIOS::CalcExplicitMeshInfo(const conduit::Node &node, 
+                            const conduit::Node &topoNode, 
+                            vector<vector<double>> &XYZ, 
+                            vector<int> &topoConnectivity)
 {
-    //const Node &topo = node["connectivity"];
-    //const double *connectivityPtr = topo.as_float64_ptr();
     const Node &X = node["x"];
     const Node &Y = node["y"];
     const Node &Z = node["z"];
@@ -436,11 +445,14 @@ ADIOS::CalcExplicitMeshInfo(const conduit::Node &node, vector<vector<double>> &X
                  Z.dtype().number_of_elements(),
                  0};
 
-    cout<<"***************************************"<<endl;
+    const Node &con = topoNode["elements/connectivity"];
+
+   /* cout<<"***************************************"<<endl;
     cout<<"*****x size: "<<X.dtype().number_of_elements()<<endl;
     cout<<"*****y size: "<<Y.dtype().number_of_elements()<<endl;
     cout<<"*****z size: "<<Z.dtype().number_of_elements()<<endl;
-
+    cout<<"*****con size: "<<con.dtype().number_of_elements()<<endl; 
+*/
     //Stuff the XYZ coordinates into the conveniently provided array.
     XYZ.resize(3);
     for (int i = 0; i < 3; i++)
@@ -449,16 +461,86 @@ ADIOS::CalcExplicitMeshInfo(const conduit::Node &node, vector<vector<double>> &X
         std::memcpy(&(XYZ[i][0]), xyzPtr[i], localDims[i]*sizeof(double));
     }
 
+
+//cerr << "!!!!!!!! detailed topo" << endl;    
+//topoNode.print_detailed();
+    
+    localDimsCon = {con.dtype().number_of_elements()};
+    const int *conPtr = con.as_int32_ptr();
+    for(int z = 0; z < con.dtype().number_of_elements(); z++)
+    {
+        topoConnectivity.push_back(conPtr[z]);
+    }    
+
     //Participation trophy if you only bring 1 rank to the game.
     if (numRanks == 1)
     {
         offset = {0,0,0};
         globalDims = localDims;
+        offsetCon = {0};
+        globalDimsCon = localDimsCon;
         return true;
     }
 
 #ifdef ASCENT_MPI_ENABLED
 
+    // Have to figure out the indexing for each rank.
+    vector<int> ldims(3*numRanks, 0); //, buff(3*numRanks,0);
+    ldims[3*rank + 0] = localDims[0];
+    ldims[3*rank + 1] = localDims[1];
+    ldims[3*rank + 2] = localDims[2];
+
+    //int mpiStatus;
+    //mpiStatus = MPI_Allreduce(&ldims[0], &buff[0], ldims.size(), MPI_INT, MPI_SUM, mpi_comm);
+    //if (mpiStatus != MPI_SUCCESS)
+    //    return false;
+
+    //Calculate the global dims. This is just the sum of all the localDims.
+    globalDims = {localDims[0],localDims[1],localDims[2]};
+#if 0
+    globalDims = {numRanks,0,0,0};
+    for (int i = 0; i < buff.size(); i+=3)
+    {
+        globalDims[1] += buff[i + 0];
+        globalDims[2] += buff[i + 1];
+        globalDims[3] += buff[i + 2];
+    }
+#endif
+
+    //And now for the offsets. It is the sum of all the localDims before me.
+    offset = {0,0,0};
+    /*
+    for (int i = 0; i < rank; i++)
+    {
+        offset[0] += buff[i*3 + 0];
+        offset[1] += buff[i*3 + 1];
+        offset[2] += buff[i*3 + 2];
+    }
+    */
+
+#if 0
+    if (rank == 0)
+    {
+        cout<<"***************************************"<<endl;
+        cout<<"*****globalDims: "<<globalDims<<endl;
+    }
+    MPI_Barrier(mpi_comm);
+    for (int i = 0; i < numRanks; i++)
+    {
+        if (i == rank)
+        {
+            cout<<"  "<<rank<<": *****localDims:"<<localDims<<endl;
+            cout<<"  "<<rank<<": *****offset:"<<offset<<endl;
+            cout<<"  X: "<<rank<<XYZ[0]<<endl;
+            cout<<"  Y: "<<rank<<XYZ[1]<<endl;
+            cout<<"  Z: "<<rank<<XYZ[2]<<endl;
+            cout<<"***************************************"<<endl<<endl;
+        }
+        MPI_Barrier(mpi_comm);
+    }
+#endif
+
+/*
     // Have to figure out the indexing for each rank.
     vector<int> ldims(3*numRanks, 0), buff(3*numRanks,0);
     ldims[3*rank + 0] = localDims[0];
@@ -487,39 +569,24 @@ ADIOS::CalcExplicitMeshInfo(const conduit::Node &node, vector<vector<double>> &X
         offset[1] += buff[i*3 + 1];
         offset[2] += buff[i*3 + 2];
     }
+*/
 
-#if 0
-    if (rank == 0)
-    {
-        cout<<"***************************************"<<endl;
-        cout<<"*****globalDims: "<<globalDims<<endl;
-    }
-    MPI_Barrier(mpi_comm);
-    for (int i = 0; i < numRanks; i++)
-    {
-        if (i == rank)
-        {
-            cout<<"  "<<rank<<": *****localDims:"<<localDims<<endl;
-            cout<<"  "<<rank<<": *****offset:"<<offset<<endl;
-            cout<<"  X: "<<rank<<XYZ[0]<<endl;
-            cout<<"  Y: "<<rank<<XYZ[1]<<endl;
-            cout<<"  Z: "<<rank<<XYZ[2]<<endl;
-            cout<<"***************************************"<<endl<<endl;
-        }
-        MPI_Barrier(mpi_comm);
-    }
-#endif
+    //Calculate the global dims. This is just the sum of all the localDims.
+    globalDimsCon = {localDimsCon[0]};
+
+    //And now for the offsets. It is the sum of all the localDims before me.
+    offsetCon = {0}; //with more than one rank, this has to be reset to 0 now
 
     return true;
-
 #endif
 }
 
 
 //-----------------------------------------------------------------------------
 bool
-ADIOS::ExplicitMeshSchema(const Node &node)
+ADIOS::ExplicitMeshSchema(const Node &node, const Node &topoNode)
 {
+    //ensure that the coordinates are valid
     if (!node.has_child("values"))
         return false;
 
@@ -528,7 +595,8 @@ ADIOS::ExplicitMeshSchema(const Node &node)
         return false;
 
     vector<vector<double>> XYZ;
-    if (!CalcExplicitMeshInfo(node, XYZ))
+    vector<int> topoConnectivity;
+    if (!CalcExplicitMeshInfo(coords, topoNode, XYZ, topoConnectivity))
         return false;
 
     string coordNames[3] = {"coords_x", "coords_y", "coords_z"};
@@ -536,11 +604,10 @@ ADIOS::ExplicitMeshSchema(const Node &node)
     //Write schema metadata for Expl. Mesh.
     if (rank == 0)
     {
-
-        cout<<"**************************************************"<<endl;
+        /*cout<<"**************************************************"<<endl;
         cout<<rank<<": globalDims: "<<dimsToStr(globalDims)<<endl;
         cout<<rank<<": localDims: "<<dimsToStr(localDims)<<endl;
-        cout<<rank<<": offset: "<<dimsToStr(offset)<<endl;
+        cout<<rank<<": offset: "<<dimsToStr(offset)<<endl;*/
 
         //indicate this is an unstructured mesh, let reader figure out how to read it
         adios_define_mesh_unstructured(0, 0, 0, 0, 0, 0, adiosGroup, meshName.c_str());
@@ -571,6 +638,24 @@ ADIOS::ExplicitMeshSchema(const Node &node)
                                   */
         adios_write_byid(adiosFile, ids[i], (void *)&(XYZ[i][0]));
     }
+
+
+    //write out the connectivity
+    int64_t idsCon[1];
+    //local dimensions
+    vector<int64_t> lCon = {1,localDimsCon[0]};
+    //global dimensions
+    vector<int64_t> gCon = {numRanks,globalDimsCon[0]};
+    //offsets
+    vector<int64_t> oCon = {rank,offsetCon[0]};
+    idsCon[0] = adios_define_var(adiosGroup,
+                              "connectivity",
+                              "",
+                              adios_integer,
+                              dimsToStr(lCon).c_str(),
+                              dimsToStr(gCon).c_str(),
+                              dimsToStr(oCon).c_str());
+    adios_write_byid(adiosFile, idsCon[0], (void *)&(topoConnectivity[0]));
 
     return true;
 }
@@ -694,12 +779,12 @@ ADIOS::RectilinearMeshSchema(const Node &node)
     //Write schema metadata for Rect Mesh.
     if (rank == 0)
     {
-        /*
+        
         cout<<"**************************************************"<<endl;
         cout<<rank<<": globalDims: "<<dimsToStr(globalDims)<<endl;
         cout<<rank<<": localDims: "<<dimsToStr(localDims)<<endl;
         cout<<rank<<": offset: "<<dimsToStr(offset)<<endl;
-        */
+        
 
         //adios_define_mesh_timevarying("no", adiosGroup, meshName.c_str());
         adios_define_mesh_rectilinear((char*)dimsToStr(globalDims).c_str(),
@@ -741,24 +826,26 @@ ADIOS::FieldVariable(const string &fieldName, const Node &node, const Node &n_to
 {
     // TODO: we can assume this is true if verify is true and this is a rect mesh.
     if (!node.has_child("values") ||
-        !node.has_child("association") ||
-        !node.has_child("type"))
+        !node.has_child("association") //||
+        //!node.has_child("type")
+)
     {
         cerr << "Field Variable not supported at this time" << endl;
         return false;
     }
 
-    const string &fieldType = node["type"].as_string();
+//    const string &fieldType = node["type"].as_string();
     const string &fieldAssoc = node["association"].as_string();
 
-    if (fieldType != "scalar")
+
+/*    if (fieldType != "scalar")
     {
         ASCENT_INFO("Field type "
                     << fieldType
                     << " not supported for ADIOS this time");
         cerr << "Field type " << fieldType << " not supported for ADIOS at this time";
         return false;
-    }
+    }*/
     if (fieldAssoc != "vertex" && fieldAssoc != "element")
     {
         ASCENT_INFO("Field association "
@@ -805,46 +892,30 @@ ADIOS::FieldVariable(const string &fieldName, const Node &node, const Node &n_to
     {
         string mesh_type     = n_topo["type"].as_string();
 
-        n_topo.print_detailed();
-        cerr << "mesh type = " << mesh_type << endl;
+        //n_topo.print_detailed();
+        //cerr << "mesh type = " << mesh_type << endl;
 
-        if(mesh_type == "structured") //assuming we have a cube here, needs expanded for zoo
+        //hack for a single cell type for unstructured
+        if(mesh_type == "unstructured") //assuming we have a cube here, needs expanded for zoo
         {
-            //const Node &n_topo_eles = n_topo["elements"];
             int numElements = field_values.dtype().number_of_elements();
 
-            std::vector<int64_t> globalDimsCopy, localDimsCopy;
-            if(!explicitMesh)
-            {
-                globalDimsCopy.resize(4);
-                localDimsCopy.resize(4);
-                globalDimsCopy = globalDims;
-                localDimsCopy = localDims;
-            }
-            else
-            {
-                globalDimsCopy.resize(3);
-                localDimsCopy.resize(3);
-                globalDimsCopy = {0, 0, 0};
-                localDimsCopy = {0, 0, 0};
-                for(int i = 0; i < 3; i++)
-                {
-                    globalDimsCopy[i] = std::pow(globalDims[i], 1/3.);
-                    localDimsCopy[i] = std::pow(localDims[i], 1/3.);
-                }
-            }
-            cout<<"localDimsCopy: "<<dimsToStr(localDimsCopy, (fieldAssoc=="vertex"), explicitMesh)<<endl;
-            cout<<"globalDimsCopy: "<<dimsToStr(globalDimsCopy, (fieldAssoc=="vertex"), explicitMesh)<<endl;
-            cout<<"offset: "<<dimsToStr(offset, (fieldAssoc=="vertex"), explicitMesh)<<endl;
+            //local dimensions
+            vector<int64_t> l = {1,numElements};
+            //global dimensions
+            vector<int64_t> g = {numRanks,numElements};
+            //offsets
+            vector<int64_t> o = {rank,0};
+      
 
             //write the field data
             int64_t varId = adios_define_var(adiosGroup,
                                          (char*)fieldName.c_str(),
                                          "",
                                          adios_double,
-                                         dimsToStr(localDimsCopy, (fieldAssoc=="vertex"), explicitMesh).c_str(),
-                                         dimsToStr(globalDimsCopy, (fieldAssoc=="vertex"), explicitMesh).c_str(),
-                                         dimsToStr(offset, (fieldAssoc=="vertex"), explicitMesh).c_str());
+                                         dimsToStr(l, (fieldAssoc=="vertex"), explicitMesh).c_str(),
+                                         dimsToStr(g, (fieldAssoc=="vertex"), explicitMesh).c_str(),
+                                         dimsToStr(o, (fieldAssoc=="vertex"), explicitMesh).c_str());
             adios_define_var_mesh(adiosGroup,
                                   (char*)fieldName.c_str(),
                                   meshName.c_str());
@@ -854,6 +925,10 @@ ADIOS::FieldVariable(const string &fieldName, const Node &node, const Node &n_to
             adios_write(adiosFile, fieldName.c_str(), (void*)vals);
 
             //write the offset data for the field
+        }
+        else if(mesh_type =="unstructured")
+        {
+            cerr << "This is a bad place to be" << endl;
         }
 
 

@@ -99,7 +99,7 @@ private:
 
     bool RectilinearMeshSchema(const conduit::Node &node);
 
-    bool ExplicitMeshSchema(const conduit::Node &node);
+    bool ExplicitMeshSchema(const conduit::Node &node, const conduit::Node &topoNode);
 
     bool FieldVariable(const std::string &fieldName, const conduit::Node &fieldNode, const conduit::Node &n_topo);
 
@@ -107,7 +107,9 @@ private:
                                  std::vector<std::vector<double>> &globalCoords);
 
     bool CalcExplicitMeshInfo(const conduit::Node &node,
-                                 std::vector<std::vector<double>> &globalCoords);
+                              const conduit::Node &topoNode,
+                                 std::vector<std::vector<double>> &globalCoords,
+                              std::vector<int> &topoCon);
 
     int rank, numRanks;
     int step;
@@ -125,6 +127,7 @@ private:
 
     //var dimensions for this rank:
     std::vector<int64_t> globalDims, localDims, offset;
+    std::vector<int64_t> globalDimsCon, localDimsCon, offsetCon;
 
     template <typename T>
     std::string dimsToStr(const std::vector<T> &d, bool pointCentered=true, bool explicitMesh=false)

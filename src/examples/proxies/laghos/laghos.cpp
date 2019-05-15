@@ -57,6 +57,8 @@
 #include <fstream>
 
 #include <ascent.hpp>
+#include <chrono>
+#include <sys/time.h>
 
 // Choice for the problem setup.
 int problem;
@@ -68,6 +70,27 @@ using namespace mfem::hydrodynamics;
 
 
 void display_banner(ostream & os);
+
+
+static std::ofstream *timingInfo = NULL; 
+void 
+RecordTime(const std::string &nm, double time, int myRank, int myNumRanks, int cycle)
+{
+    int rank = 0, numRanks = 0;
+    rank =  myRank;
+    numRanks = myNumRanks;
+    
+    if (timingInfo == NULL)
+    {
+        timingInfo = new ofstream;
+        char nm[32];
+        sprintf(nm, "laghos.timing.%d.out", rank);
+        timingInfo->open(nm, ofstream::out);
+    }
+    (*timingInfo)<<cycle<<", LahosTiming"<<"_"<<rank<<"_"<<numRanks<<", "<<nm<<", "<<time<<endl;
+    //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -450,8 +473,11 @@ int main(int argc, char *argv[])
    bool last_step = false;
    int steps = 0;
    BlockVector S_old(S);
+   
    for (int ti = 1; !last_step; ti++)
    {
+      auto startT = std::chrono::steady_clock::now();
+
       if (t + dt >= t_final)
       {
          dt = t_final - t;
@@ -527,6 +553,7 @@ int main(int argc, char *argv[])
 
          if (visit)
          {
+            auto startVisit = std::chrono::steady_clock::now();
 
             //visit_dc.SetCycle(ti);
             //visit_dc.SetTime(t);
@@ -558,7 +585,8 @@ int main(int argc, char *argv[])
             reset["action"] = "reset";
 
             ascent.execute(actions);
-
+            
+            RecordTime("visTime", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startVisit).count(), myid, mpi.WorldSize(), ti);
          }
 
          if (gfprint)
@@ -594,6 +622,7 @@ int main(int argc, char *argv[])
             e_ofs.close();
          }
       }
+      RecordTime("appTime", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count(), myid, mpi.WorldSize(), ti);
    }
 
    switch (ode_solver_type)

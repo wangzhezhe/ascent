@@ -328,7 +328,7 @@ if couplingType == 'tight' :
         fields = ['appTime','visTime','PreExecute','DoExecute','Composite','ExecScene']
         selector = [0, 0, 'max', 'max', 'max', 'max']
     elif visType == 'advect' :
-        fields = ['appTime','visTime', 'PointAverageFilter', 'ContourFilter', 'ExecScene']
+        fields = ['appTime','visTime', 'StreamlineFilter']
         selector = [0, 0, 'max', 'max', 'max']
     else :
         print 'Unsupported visualization operation',  type(visType)

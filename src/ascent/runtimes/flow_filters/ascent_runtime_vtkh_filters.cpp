@@ -83,6 +83,7 @@
 #include <vtkh/rendering/VolumeRenderer.hpp>
 #include <vtkh/filters/Clip.hpp>
 #include <vtkh/filters/ClipField.hpp>
+#include <vtkh/filters/GhostStripper.hpp>
 #include <vtkh/filters/IsoVolume.hpp>
 #include <vtkh/filters/MarchingCubes.hpp>
 #include <vtkh/filters/NoOp.hpp>
@@ -478,12 +479,22 @@ public:
                     const std::vector<vtkm::Id> &domain_ids,
                     const conduit::Node &render_node)
   {
-    conduit::Node render_copy = render_node; 
+    conduit::Node render_copy = render_node;
+
+    // allow zoom to be ajusted
+    conduit::Node zoom;
+    if(render_copy.has_path("camera/zoom"))
+    {
+      zoom = render_copy["camera/zoom"];
+    }
+
     // cinema is controlling the camera so get
     // rid of it
     if(render_copy.has_path("camera"))
     {
       render_copy["camera"].reset();
+
+
     }
     std::string tmp_name = "";
     vtkh::Render render = detail::parse_render(render_copy,
@@ -497,6 +508,13 @@ public:
       std::string image_name = conduit::utils::join_file_path(m_image_path , m_image_names[i]);
 
       render.SetImageName(image_name);
+
+      if(!zoom.dtype().is_empty())
+      {
+        // Allow default zoom to be overridden
+        m_cameras[i].Zoom(zoom.to_float32());
+      }
+
       render.SetCamera(m_cameras[i]);
       renders->push_back(render);
     }
@@ -641,7 +659,7 @@ private:
         camera.SetViewUp(up);
         camera.SetLookAt(center);
         camera.SetPosition(pos);
-        camera.Zoom(0.2);
+        camera.Zoom(0.2f);
 
         std::stringstream ss;
         ss<<get_string(phi)<<"_"<<get_string(theta)<<"_";
@@ -1312,6 +1330,100 @@ VTKHSlice::execute()
 }
 
 //-----------------------------------------------------------------------------
+VTKHGhostStripper::VTKHGhostStripper()
+:Filter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHGhostStripper::~VTKHGhostStripper()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHGhostStripper::declare_interface(Node &i)
+{
+    i["type_name"]   = "vtkh_ghost_stripper";
+    i["port_names"].append() = "in";
+    i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool
+VTKHGhostStripper::verify_params(const conduit::Node &params,
+                             conduit::Node &info)
+{
+    info.reset();
+
+    bool res = check_string("field",params, info, true);
+
+    res = check_numeric("min_value",params, info, true) && res;
+    res = check_numeric("max_value",params, info, true) && res;
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("min_value");
+    valid_paths.push_back("max_value");
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
+    }
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHGhostStripper::execute()
+{
+
+    if(!input(0).check_type<vtkh::DataSet>())
+    {
+        ASCENT_ERROR("VTKHGhostStripper input must be a vtk-h dataset");
+    }
+
+    std::string field_name = params()["field"].as_string();
+
+    vtkh::DataSet *data = input<vtkh::DataSet>(0);
+
+    // Check to see of the ghost field even exists
+    bool do_strip = data->GlobalFieldExists(field_name);
+
+    if(do_strip)
+    {
+      vtkh::GhostStripper stripper;
+
+      stripper.SetInput(data);
+      stripper.SetField(field_name);
+
+      const Node &n_min_val = params()["min_value"];
+      const Node &n_max_val = params()["max_value"];
+
+      int min_val = n_min_val.to_int32();
+      int max_val = n_max_val.to_int32();
+
+      stripper.SetMaxValue(max_val);
+      stripper.SetMinValue(min_val);
+
+      stripper.Update();
+
+      vtkh::DataSet *stripper_output = stripper.GetOutput();
+
+      set_output<vtkh::DataSet>(stripper_output);
+    }
+    else
+    {
+      set_output<vtkh::DataSet>(data);
+    }
+}
+
+//-----------------------------------------------------------------------------
 VTKHThreshold::VTKHThreshold()
 :Filter()
 {
@@ -1479,7 +1591,9 @@ DefaultRender::execute()
     std::vector<vtkh::Render> *renders = new std::vector<vtkh::Render>();
 
     Node * meta = graph().workspace().registry().fetch<Node>("metadata");
+
     int cycle = 0;
+
     if(meta->has_path("cycle"))
     {
       cycle = (*meta)["cycle"].as_int32();
@@ -2202,99 +2316,6 @@ VTKHUnionDomainIds::execute()
 }
 
 //-----------------------------------------------------------------------------
-int DefaultScene::s_image_count = 0;
-
-DefaultScene::DefaultScene()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-DefaultScene::~DefaultScene()
-{
-// empty
-}
-
-
-//-----------------------------------------------------------------------------
-bool
-DefaultScene::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-    bool res = check_string("field",params, info, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-DefaultScene::declare_interface(Node &i)
-{
-    i["type_name"] = "vtkh_default_scene";
-    i["port_names"].append() = "bounds";
-    i["port_names"].append() = "domain_ids";
-    i["port_names"].append() = "data_set";
-    i["output_port"] = "false";
-}
-
-//-----------------------------------------------------------------------------
-void
-DefaultScene::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-
-    // inputs are bounds and set of domains
-    vtkm::Bounds       *bounds_in     = input<vtkm::Bounds>(0);
-    std::set<vtkm::Id> *domain_ids_set = input<std::set<vtkm::Id> >(1);
-    vtkh::DataSet      *ds = input<vtkh::DataSet>(2);
-    std::string field_name = params()["field"].as_string();
-
-    std::stringstream ss;
-    ss<<"default_image_"<<s_image_count;
-    s_image_count++;
-
-    vtkm::Bounds bounds;
-    bounds.Include(*bounds_in);
-
-    std::vector<vtkm::Id> domain_ids(domain_ids_set->begin(),
-                                     domain_ids_set->end());
-
-
-    vtkh::Render render = vtkh::MakeRender(1024,
-                                           1024,
-                                           bounds,
-                                           domain_ids,
-                                           ss.str());
-
-    std::vector<vtkh::Render> renders;
-    renders.push_back(render);
-
-    detail::AscentScene scene(&graph().workspace().registry());
-    vtkh::Renderer *renderer = new vtkh::RayTracer();
-
-    detail::RendererContainer *cont = new detail::RendererContainer(this->name() + "_cont",
-                                                                    &graph().workspace().registry(),
-                                                                    renderer);
-    renderer->SetInput(ds);
-    renderer->SetField(field_name);
-    scene.AddRenderer(cont);
-    scene.Execute(renders);
-
-    RecordTime("DefaultSceneExecute", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-}
-
-//-----------------------------------------------------------------------------
 AddPlot::AddPlot()
 :Filter()
 {
@@ -2431,6 +2452,7 @@ CreatePlot::execute()
     }
 
     vtkh::DataSet *data = input<vtkh::DataSet>(0);
+
     conduit::Node plot_params = params();
     std::string type = params()["type"].as_string();
 
@@ -2514,7 +2536,7 @@ CreatePlot::execute()
       std::string field_name = plot_params["field"].as_string();
       if(!data->GlobalFieldExists(field_name))
       {
-        ASCENT_WARN("Plot variable '"<<field_name<<"' does not exist");
+        ASCENT_INFO("Plot variable '"<<field_name<<"' does not exist");
       }
       renderer->SetField(field_name);
     }
@@ -2634,6 +2656,22 @@ ExecScene::execute()
     scene->Execute(*renders);
 
     RecordTime("ExecScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+
+    // the images should exist now so add them to the image list
+    // this can be used for the web server or jupyter
+
+    if(!graph().workspace().registry().has_entry("image_list"))
+    {
+      conduit::Node *image_list = new conduit::Node();
+      graph().workspace().registry().add<Node>("image_list", image_list,1);
+    }
+
+    conduit::Node *image_list = graph().workspace().registry().fetch<Node>("image_list");
+    for(int i = 0; i < renders->size(); ++i)
+    {
+      const std::string image_name = renders->at(i).GetImageName() + ".png";
+      image_list->append() = image_name;
+    }
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------

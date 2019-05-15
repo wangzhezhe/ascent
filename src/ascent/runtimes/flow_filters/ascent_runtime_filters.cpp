@@ -60,6 +60,8 @@
 
 #include <ascent_runtime_relay_filters.hpp>
 #include <ascent_runtime_blueprint_filters.hpp>
+#include <ascent_runtime_trigger_filters.hpp>
+#include <ascent_runtime_query_filters.hpp>
 
 #if defined(ASCENT_VTKM_ENABLED)
     #include <ascent_runtime_vtkh_filters.hpp>
@@ -108,6 +110,9 @@ register_builtin()
     AscentRuntime::register_filter_type<RelayIOSave>("extracts","relay");
     AscentRuntime::register_filter_type<RelayIOLoad>();
 
+    AscentRuntime::register_filter_type<BasicTrigger>();
+    AscentRuntime::register_filter_type<BasicQuery>();
+
 #if defined(ASCENT_VTKM_ENABLED)
     AscentRuntime::register_filter_type<DefaultRender>();
     AscentRuntime::register_filter_type<EnsureVTKH>();
@@ -119,11 +124,10 @@ register_builtin()
     AscentRuntime::register_filter_type<VTKHDomainIds>();
     AscentRuntime::register_filter_type<VTKHUnionDomainIds>();
 
-    AscentRuntime::register_filter_type<DefaultScene>();
-
     // transforms, the current crop expect vtk-h input data
     AscentRuntime::register_filter_type<VTKHClip>("transforms","clip");
     AscentRuntime::register_filter_type<VTKHClipWithField>("transforms","clip_with_field");
+    AscentRuntime::register_filter_type<VTKHGhostStripper>("transforms","ghost_stripper");
     AscentRuntime::register_filter_type<VTKHIsoVolume>("transforms","isovolume");
     AscentRuntime::register_filter_type<VTKHLagrangian>("transforms","lagrangian");
     AscentRuntime::register_filter_type<VTKHLog>("transforms","log");

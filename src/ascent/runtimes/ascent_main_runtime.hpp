@@ -74,14 +74,14 @@ public:
     virtual ~AscentRuntime();
 
     // Main runtime interface methods used by the ascent interface.
-    void  Initialize(const conduit::Node &options);
+    void  Initialize(const conduit::Node &options) override;
 
-    void  Publish(const conduit::Node &data);
-    void  Execute(const conduit::Node &actions);
+    void  Publish(const conduit::Node &data) override;
+    void  Execute(const conduit::Node &actions) override;
 
-    void  Info(conduit::Node &out);
+    void  Info(conduit::Node &out) override;
 
-    void  Cleanup();
+    void  Cleanup() override;
 
     void DisplayError(const std::string &msg) override;
 
@@ -107,6 +107,7 @@ private:
     WebInterface      m_web_interface;
     int               m_refinement_level;
     int               m_rank;
+    std::string       m_ghost_field_name;
 
     void              ResetInfo();
 
@@ -116,10 +117,16 @@ private:
                                const std::string pipeline_name);
     void ConvertPlotToFlow(const conduit::Node &plot,
                            const std::string plot_name);
-    void ConvertExtractToFlow(const conduit::Node &plot,
+    void ConvertExtractToFlow(const conduit::Node &extract,
                               const std::string extract_name);
+    void ConvertTriggerToFlow(const conduit::Node &trigger,
+                              const std::string trigger_name);
+    void ConvertQueryToFlow(const conduit::Node &trigger,
+                            const std::string trigger_name);
     void CreatePipelines(const conduit::Node &pipelines);
     void CreateExtracts(const conduit::Node &extracts);
+    void CreateTriggers(const conduit::Node &triggers);
+    void CreateQueries(const conduit::Node &queries);
     void CreatePlots(const conduit::Node &plots);
     std::vector<std::string> GetPipelines(const conduit::Node &plots);
     void CreateScenes(const conduit::Node &scenes);
@@ -129,9 +136,10 @@ private:
     void ExecuteGraphs();
     void EnsureDomainIds();
     void PopulateMetadata();
+
     std::string GetDefaultImagePrefix(const std::string scene);
 
-    void FindRenders(const conduit::Node &info, conduit::Node &out);
+    void FindRenders(conduit::Node &out);
 
 
     // internal reg helper

@@ -70,6 +70,7 @@
 
 #include <flow.hpp>
 #include <ascent_runtime_filters.hpp>
+#include <ascent_expression_eval.hpp>
 
 #if defined(ASCENT_VTKM_ENABLED)
 #include <vtkh/vtkh.hpp>
@@ -123,7 +124,8 @@ int InfoHandler::m_rank = 0;
 AscentRuntime::AscentRuntime()
 :Runtime(),
  m_refinement_level(2), // default refinement level for high order meshes
- m_rank(0)
+ m_rank(0),
+ m_ghost_field_name("ascent_ghosts")
 {
     flow::filters::register_builtin();
     ResetInfo();
@@ -212,11 +214,17 @@ AscentRuntime::Initialize(const conduit::Node &options)
     m_runtime_options = options;
 
 
+    if(options.has_path("ghost_field_name"))
+    {
+      m_ghost_field_name = options["ghost_field_name"].as_string();
+    }
 
     // standard flow filters
     flow::filters::register_builtin();
     // filters for ascent flow runtime.
     runtime::filters::register_builtin();
+    // filters for expression evaluation
+    runtime::expressions::register_builtin();
 
     if(options.has_path("web/stream") &&
        options["web/stream"].as_string() == "true" &&
@@ -309,8 +317,10 @@ AscentRuntime::EnsureDomainIds()
         has_ids = false;
       }
     }
+
+
 #ifdef ASCENT_MPI_ENABLED
-    int comm_id =flow::Workspace::default_mpi_comm();
+    int comm_id = flow::Workspace::default_mpi_comm();
 
     MPI_Comm mpi_comm = MPI_Comm_f2c(comm_id);
 
@@ -375,7 +385,7 @@ AscentRuntime::EnsureDomainIds()
 std::string
 AscentRuntime::CreateDefaultFilters()
 {
-    const std::string end_filter = "vtkh_data";
+    static std::string end_filter = "vtkh_data";
     if(w.graph().has_filter(end_filter))
     {
       return end_filter;
@@ -407,6 +417,8 @@ AscentRuntime::CreateDefaultFilters()
 
     conduit::Node vtkh_params;
     vtkh_params["zero_copy"] = "true";
+
+
     w.graph().add_filter("ensure_vtkh",
                          "vtkh_data",
                          vtkh_params);
@@ -414,6 +426,25 @@ AscentRuntime::CreateDefaultFilters()
     w.graph().connect("low_order",
                       "vtkh_data",
                       0);        // default port
+    //if(m_has_ghosts)
+    //{
+      const std::string strip_name = "strip_garbage_ghosts";
+      // garbage zones have a value of 2
+      conduit::Node threshold_params;
+      threshold_params["field"] = m_ghost_field_name;
+      threshold_params["min_value"] = 0;
+      threshold_params["max_value"] = 1;
+
+      w.graph().add_filter("vtkh_ghost_stripper",
+                           strip_name,
+                           threshold_params);
+
+      w.graph().connect("vtkh_data",
+                        strip_name,
+                        0);        // default port
+
+      end_filter = strip_name;
+    //}
 
     return end_filter;
 }
@@ -539,8 +570,9 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
   {
     filter_name = "python_script";
 
-    // customize the names of the script integration funcs
-    params["interface/input"] = "ascent_data";
+    // customize the names of the script integration module and funcs
+    params["interface/module"] = "ascent_extract";
+    params["interface/input"]  = "ascent_data";
     params["interface/set_output"] = "ascent_set_output";
 
 #ifdef ASCENT_MPI_ENABLED
@@ -582,6 +614,9 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
      py_src_final << "# ascent mpi comm helper function" << std::endl
                   << "def ascent_mpi_comm_id():" << std::endl
                   << "    return " << comm_id << std::endl
+                  << std::endl
+                  // bind ascent_mpi_comm_id into the module
+                  << "ascent_extract.ascent_mpi_comm_id = ascent_mpi_comm_id"
                   << std::endl
                   << params["source"].as_string(); // now include user's script
 
@@ -657,6 +692,41 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
 
 }
 //-----------------------------------------------------------------------------
+void
+AscentRuntime::ConvertTriggerToFlow(const conduit::Node &trigger,
+                                    const std::string trigger_name)
+{
+  std::string filter_name;
+
+  conduit::Node params;
+  if(trigger.has_path("params")) params = trigger["params"];
+
+  w.graph().add_filter("basic_trigger",
+                       trigger_name,
+                       params);
+
+  // this is the blueprint mesh
+  m_connections[trigger_name] = "source";
+
+}
+//-----------------------------------------------------------------------------
+void
+AscentRuntime::ConvertQueryToFlow(const conduit::Node &query,
+                                  const std::string query_name)
+{
+  std::string filter_name;
+
+  conduit::Node params;
+  if(query.has_path("params")) params = query["params"];
+
+  w.graph().add_filter("basic_query",
+                       query_name,
+                       params);
+
+  // this is the blueprint mesh
+  m_connections[query_name] = "source";
+
+}
 //-----------------------------------------------------------------------------
 void
 AscentRuntime::ConvertPlotToFlow(const conduit::Node &plot,
@@ -687,8 +757,31 @@ AscentRuntime::ConvertPlotToFlow(const conduit::Node &plot,
   else
   {
     // default pipeline: directly connect to published data
-    plot_source = "default";
+    plot_source = CreateDefaultFilters();
   }
+
+
+  // we need to make sure that ghost zones don't make it into rendering
+  // so we will create new filters that attach to the pipeline outputs
+  std::string strip_name = plot_source + "_strip_real_ghosts";
+  if(!w.graph().has_filter(strip_name))
+  {
+    conduit::Node threshold_params;
+    threshold_params["field"] = m_ghost_field_name;
+    threshold_params["min_value"] = 0;
+    threshold_params["max_value"] = 0;
+
+    w.graph().add_filter("vtkh_ghost_stripper",
+                         strip_name,
+                         threshold_params);
+
+    w.graph().connect(plot_source,
+                      strip_name,
+                      0);        // default port
+  }
+
+  plot_source = strip_name;
+
   m_connections[plot_name] = plot_source;
 
 }
@@ -715,12 +808,38 @@ AscentRuntime::CreateExtracts(const conduit::Node &extracts)
   }
 }
 
+//-----------------------------------------------------------------------------
+void
+AscentRuntime::CreateTriggers(const conduit::Node &triggers)
+{
+  std::vector<std::string> names = triggers.child_names();
+  for(int i = 0; i < triggers.number_of_children(); ++i)
+  {
+    conduit::Node trigger = triggers.child(i);
+    ConvertTriggerToFlow(trigger, names[i]);
+  }
+}
+
+//-----------------------------------------------------------------------------
+void
+AscentRuntime::CreateQueries(const conduit::Node &queries)
+{
+  std::vector<std::string> names = queries.child_names();
+  for(int i = 0; i < queries.number_of_children(); ++i)
+  {
+    conduit::Node query = queries.child(i);
+    ConvertQueryToFlow(query, names[i]);
+  }
+}
+
+//-----------------------------------------------------------------------------
 void
 AscentRuntime::PopulateMetadata()
 {
   // add global state meta data to the registry
   const int num_domains = m_data.number_of_children();
   int cycle = 0;
+  float time = 0.f;
 
   for(int i = 0; i < num_domains; ++i)
   {
@@ -729,16 +848,21 @@ AscentRuntime::PopulateMetadata()
     {
       cycle = dom["state/cycle"].to_int32();
     }
+    if(dom.has_path("state/time"))
+    {
+      time = dom["state/time"].to_float32();
+    }
   }
 
   if(!w.registry().has_entry("metadata"))
   {
     conduit::Node *meta = new conduit::Node();
-    w.registry().add<Node>("metadata", meta,1);
+    w.registry().add<conduit::Node>("metadata", meta,1);
   }
 
   Node *meta = w.registry().fetch<Node>("metadata");
   (*meta)["cycle"] = cycle;
+  (*meta)["time"] = time;
   (*meta)["refinement_level"] = m_refinement_level;
 
 }
@@ -788,6 +912,7 @@ AscentRuntime::ConnectGraphs()
 }
 
 //-----------------------------------------------------------------------------
+// This function is used to feed renders (domain ids and bounds)
 std::vector<std::string>
 AscentRuntime::GetPipelines(const conduit::Node &plots)
 {
@@ -805,8 +930,13 @@ AscentRuntime::GetPipelines(const conduit::Node &plots)
     {
       pipeline = CreateDefaultFilters();
     }
+
+    // we are always adding a ghost filter so append the name
+    // so bounds and domain ids get the right input
+    pipeline = pipeline + "_strip_real_ghosts";
     pipelines.push_back(pipeline);
   }
+
   return pipelines;
 }
 
@@ -1059,21 +1189,24 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
 }
 
 void
-AscentRuntime::FindRenders(const conduit::Node &info,
-                           conduit::Node &out)
+AscentRuntime::FindRenders(conduit::Node &out)
 {
     out.reset();
-    NodeConstIterator itr = info["flow_graph/graph/filters"].children();
 
-    while(itr.has_next())
+    if(!w.registry().has_entry("image_list"))
     {
-        const Node &curr_filter = itr.next();
-        if(curr_filter.has_path("params/image_prefix"))
-        {
-            std::string img_path = curr_filter["params/image_prefix"].as_string() + ".png";
-            out.append() = img_path;
-        }
+      return;
     }
+
+    Node *image_list = w.registry().fetch<Node>("image_list");
+
+    const int size = image_list->number_of_children();
+    for(int i = 0; i < size; i++)
+    {
+      out.append() = image_list->child(i).as_string();
+    }
+
+    image_list->reset();
 
 }
 
@@ -1084,6 +1217,17 @@ AscentRuntime::Execute(const conduit::Node &actions)
     ResetInfo();
     // make sure we always have our source data
     ConnectSource();
+
+    // exection will be enforced in the following order:
+    conduit::Node queries;
+    conduit::Node triggers;
+    conduit::Node pipelines;
+    conduit::Node scenes;
+    conduit::Node extracts;
+
+    bool do_execute = false;
+    bool do_reset= false;
+
     // Loop over the actions
     for (int i = 0; i < actions.number_of_children(); ++i)
     {
@@ -1094,76 +1238,151 @@ AscentRuntime::Execute(const conduit::Node &actions)
         {
           if(action.has_path("pipelines"))
           {
-            CreatePipelines(action["pipelines"]);
+            pipelines.append() = action["pipelines"];
           }
           else
           {
             ASCENT_ERROR("action 'add_pipelines' missing child 'pipelines'");
           }
         }
-
-        if(action_name == "add_scenes")
+        else if(action_name == "add_scenes")
         {
           if(action.has_path("scenes"))
           {
-            CreateScenes(action["scenes"]);
+            scenes.append() = action["scenes"];
           }
           else
           {
             ASCENT_ERROR("action 'add_scenes' missing child 'scenes'");
           }
         }
-
-        if(action_name == "add_extracts")
+        else if(action_name == "add_extracts")
         {
           if(action.has_path("extracts"))
           {
-            CreateExtracts(action["extracts"]);
+            extracts.append() = action["extracts"];
           }
           else
           {
             ASCENT_ERROR("action 'add_extracts' missing child 'extracts'");
           }
         }
-
+        else if(action_name == "add_triggers")
+        {
+          if(action.has_path("triggers"))
+          {
+            triggers.append() = action["triggers"];
+          }
+          else
+          {
+            ASCENT_ERROR("action 'add_triggers' missing child 'triggers'");
+          }
+        }
+        else if(action_name == "add_queries")
+        {
+          if(action.has_path("queries"))
+          {
+            queries.append() = action["queries"];
+          }
+          else
+          {
+            ASCENT_ERROR("action 'add_queries' missing child 'queries'");
+          }
+        }
         else if( action_name == "execute")
         {
-          ConnectGraphs();
-          PopulateMetadata(); // add metadata so filters can access it
-          w.info(m_info["flow_graph"]);
-          //w.print();
-          //std::cout<<w.graph().to_dot();
-
-#if defined(ASCENT_VTKM_ENABLED)
-          // we have vtkm enabled so catch any errors that
-          // come up here and forward them up as a conduit
-          // error
-          try
-          {
-            w.execute();
-            w.registry().reset();
-          }
-          catch(vtkh::Error &e)
-          {
-            ASCENT_ERROR("Execution failed with: "<<e.what());
-          }
-#else
-          w.execute();
-          w.registry().reset();
-#endif
-
-          Node msg;
-          this->Info(msg["info"]);
-          ascent::about(msg["about"]);
-          m_web_interface.PushMessage(msg);
-          Node renders;
-          FindRenders(msg["info"],renders);
-          m_web_interface.PushRenders(renders);
+          do_execute = true;
         }
         else if( action_name == "reset")
         {
-          w.reset();
+          do_reset = true;
         }
+        else
+        {
+            ASCENT_ERROR("Unknown action ' "<<action_name<<"'");
+        }
+
+    }
+
+    // we are enforcing the order of exectution
+    for(int i = 0; i < queries.number_of_children(); ++i)
+    {
+      CreateQueries(queries.child(i));
+    }
+    for(int i = 0; i < triggers.number_of_children(); ++i)
+    {
+      CreateTriggers(triggers.child(i));
+    }
+    for(int i = 0; i < pipelines.number_of_children(); ++i)
+    {
+      CreatePipelines(pipelines.child(i));
+    }
+    for(int i = 0; i < scenes.number_of_children(); ++i)
+    {
+      CreateScenes(scenes.child(i));
+    }
+    for(int i = 0; i < extracts.number_of_children(); ++i)
+    {
+      CreateExtracts(extracts.child(i));
+    }
+
+    if(do_execute)
+    {
+
+      ConnectGraphs();
+      PopulateMetadata(); // add metadata so filters can access it
+      w.info(m_info["flow_graph"]);
+      //w.print();
+      //std::cout<<w.graph().to_dot();
+
+      // catch any errors that come up here and forward
+      // them up as a conduit error
+      try
+      {
+        w.execute();
+      }
+#if defined(ASCENT_VTKM_ENABLED)
+      catch(vtkh::Error &e)
+      {
+        ASCENT_ERROR("Execution failed with vtkh: "<<e.what());
+      }
+#endif
+      catch(conduit::Error &e)
+      {
+        throw e;
+      }
+      catch(std::exception &e)
+      {
+        ASCENT_ERROR("Execution failed with: "<<e.what());
+      }
+
+      Node msg;
+      this->Info(msg["info"]);
+      ascent::about(msg["about"]);
+      m_web_interface.PushMessage(msg);
+
+      Node renders;
+      FindRenders(renders);
+      m_info["images"] = renders;
+
+      const conduit::Node &expression_cache =
+        runtime::expressions::ExpressionEval::get_cache();
+
+      if(expression_cache.number_of_children() > 0)
+      {
+        m_info["expressions"] = expression_cache;
+      }
+
+      m_web_interface.PushRenders(renders);
+
+      w.registry().reset();
+    }
+
+    if(do_reset)
+    {
+      // resets the entire workspace meaning all filters
+      // in the graph are cleared
+      w.reset();
     }
 }
 

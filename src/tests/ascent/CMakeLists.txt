@@ -55,6 +55,7 @@ set(BASIC_TESTS t_ascent_smoke
                 t_ascent_utils
                 t_ascent_empty_runtime
                 t_ascent_error_handling
+                t_ascent_expressions
                 t_ascent_cinema_a
                 t_ascent_render_2d
                 t_ascent_render_3d
@@ -64,6 +65,7 @@ set(BASIC_TESTS t_ascent_smoke
                 t_ascent_clip_with_field
                 t_ascent_contour
                 t_ascent_iso_volume
+                t_ascent_image_compare
                 t_ascent_pipelines_to_pipelines
                 t_ascent_threshold
                 t_ascent_slice
@@ -72,10 +74,13 @@ set(BASIC_TESTS t_ascent_smoke
                 t_ascent_rover
                 t_ascent_lagrangian
                 t_ascent_log
+                t_ascent_queries
+                t_ascent_triggers
                 t_ascent_hola)
 
 set(MPI_TESTS  t_ascent_mpi_smoke
                t_ascent_mpi_empty_runtime
+               t_ascent_mpi_expressions
                t_ascent_mpi_render_2d
                t_ascent_mpi_render_3d
                t_ascent_mpi_slice)

@@ -164,13 +164,20 @@ ADIOS::ADIOS()
     numRanks = 1;
     meshName = "mesh";
     step = 0;
+
     globalDims.resize(4);
     localDims.resize(4);
-    localDimsCon.resize(1);
-    globalDims.resize(1);
     offset.resize(4);
     for (int i = 0; i < 4; i++)
         globalDims[i] = localDims[i] = offset[i] = 0;
+
+    localDimsCon.resize(1);
+    localDimsCon[0] = 0;
+    globalDimsCon.resize(1);
+    globalDimsCon[0] = 0;
+    offsetCon.resize(1);
+    offsetCon[0] = 0;
+
 
 #ifdef ASCENT_MPI_ENABLED
     mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
@@ -230,7 +237,7 @@ ADIOS::execute()
     if(!input(0).check_type<Node>())
     {
         // error
-        ASCENT_ERROR("adios filter requires a conduit::Node input");
+        ASCENT_ERROR("ERROR: adios filter requires a conduit::Node input");
     }
 
     transportType = params()["transport"].as_string();
@@ -332,7 +339,7 @@ ADIOS::execute()
     }
     else
     {
-        ASCENT_ERROR("Unsupported transport type");
+        ASCENT_ERROR("ERROR: Unsupported transport type");
     }
 
     adios_define_schema_version(adiosGroup, (char*)"1.1");
@@ -342,9 +349,13 @@ ADIOS::execute()
     Node *node_input = input<Node>(0);
     Node &child_domain = node_input->child(0);
 
-//cerr << "Printing main node schema" << endl;
-//node_input->schema().print();
-//cerr << endl;
+//if(rank == 0)
+//{
+//   cerr << "Printing main node schema" << endl;
+//    node_input->schema().print();
+    //cerr << endl;
+//}
+
 
     NodeConstIterator itr = child_domain["coordsets"].children();
     NodeConstIterator topoItr = child_domain["topologies"].children();
@@ -394,7 +405,7 @@ ADIOS::execute()
             const Node& field = fields_itr.next();
             std::string field_name = fields_itr.name();
             bool saveField = (variables.empty() ? true : false);
-
+            //cerr << "seeing if we want to save: " << field_name << endl;
             for (auto &v : variables)
                 if (field_name == v)
                 {
@@ -406,10 +417,18 @@ ADIOS::execute()
                 FieldVariable(field_name, field, n_topo);
         }
     }
-
+//cerr << " " << rank << " finished saving vars " << endl;
+//MPI_Barrier(mpi_comm);
+//cerr << "Ascent finished adios send" << endl;
+//MPI_Barrier(mpi_comm);
+//cerr << __FILE__ << " " << __LINE__ << endl;
+//MPI_Barrier(mpi_comm);
     adios_close(adiosFile);
+//MPI_Barrier(mpi_comm);
     //adios_advance_step(adiosFile, 0, 1000);
     step++;
+//MPI_Barrier(mpi_comm);
+//cerr << __FILE__ << " " << __LINE__ << endl;
 }
 
 //-----------------------------------------------------------------------------
@@ -604,10 +623,10 @@ ADIOS::ExplicitMeshSchema(const Node &node, const Node &topoNode)
     //Write schema metadata for Expl. Mesh.
     if (rank == 0)
     {
-        /*cout<<"**************************************************"<<endl;
-        cout<<rank<<": globalDims: "<<dimsToStr(globalDims)<<endl;
-        cout<<rank<<": localDims: "<<dimsToStr(localDims)<<endl;
-        cout<<rank<<": offset: "<<dimsToStr(offset)<<endl;*/
+        //cout<<"**************************************************"<<endl;
+        //cout<<rank<<": globalDims: "<<dimsToStr(globalDims)<<endl;
+        //cout<<rank<<": localDims: "<<dimsToStr(localDims)<<endl;
+        //cout<<rank<<": offset: "<<dimsToStr(offset)<<endl;
 
         //indicate this is an unstructured mesh, let reader figure out how to read it
         adios_define_mesh_unstructured(0, 0, 0, 0, 0, 0, adiosGroup, meshName.c_str());
@@ -828,7 +847,7 @@ ADIOS::FieldVariable(const string &fieldName, const Node &node, const Node &n_to
     if (!node.has_child("values") ||
         !node.has_child("association") //||
         //!node.has_child("type")
-)
+       )
     {
         cerr << "Field Variable not supported at this time" << endl;
         return false;
@@ -855,67 +874,34 @@ ADIOS::FieldVariable(const string &fieldName, const Node &node, const Node &n_to
         return false;
     }
 
-    //!!This is only good when one variable is passed to adios
-    //its a vector
-    //node["values"].number_of_children()
-    const Node &field_values = node["values"];
-    //field_values.schema().print();
-    const double *vals = field_values.as_double_ptr();
+//    if(node["values"].number_of_children() == 1)
+ //   {
 
-    /*
-    cerr << "assoc: " << fieldAssoc << endl;
-    node.print_detailed();
-    cout<<"FIELD "<<fieldName<<" #= "<<field_values.dtype().number_of_elements()<<endl;
-    cout<<"localDims: "<<dimsToStr(localDims, (fieldAssoc=="vertex"), explicitMesh)<<endl;
-    cout<<"globalDims: "<<dimsToStr(globalDims, (fieldAssoc=="vertex"), explicitMesh)<<endl;
-    cout<<"offset: "<<dimsToStr(offset, (fieldAssoc=="vertex"), explicitMesh)<<endl;
-    */
+        //!!This is only good when one variable is passed to adios
+        //its a vector
+        //node["values"].number_of_children()
+        const Node &field_values = node["values"];
+        //field_values.schema().print();
+        const double *vals = field_values.as_double_ptr();
 
-    if(!explicitMesh)
-    {
-        int64_t varId = adios_define_var(adiosGroup,
-                                         (char*)fieldName.c_str(),
-                                         "",
-                                         adios_double,
-                                         dimsToStr(localDims, (fieldAssoc=="vertex")).c_str(),
-                                         dimsToStr(globalDims, (fieldAssoc=="vertex")).c_str(),
-                                         dimsToStr(offset, (fieldAssoc=="vertex")).c_str());
-        adios_define_var_mesh(adiosGroup,
-                              (char*)fieldName.c_str(),
-                              meshName.c_str());
-        adios_define_var_centering(adiosGroup,
-                                   fieldName.c_str(),
-                                   (fieldAssoc == "vertex" ? "point" : "cell"));
-        adios_write(adiosFile, fieldName.c_str(), (void*)vals);
-    }
-    else //need to write seperate array for each cell type
-    {
-        string mesh_type     = n_topo["type"].as_string();
+        /*
+        cerr << "assoc: " << fieldAssoc << endl;
+        node.print_detailed();
+        cout<<"FIELD "<<fieldName<<" #= "<<field_values.dtype().number_of_elements()<<endl;
+        cout<<"localDims: "<<dimsToStr(localDims, (fieldAssoc=="vertex"), explicitMesh)<<endl;
+        cout<<"globalDims: "<<dimsToStr(globalDims, (fieldAssoc=="vertex"), explicitMesh)<<endl;
+        cout<<"offset: "<<dimsToStr(offset, (fieldAssoc=="vertex"), explicitMesh)<<endl;
+        */
 
-        //n_topo.print_detailed();
-        //cerr << "mesh type = " << mesh_type << endl;
-
-        //hack for a single cell type for unstructured
-        if(mesh_type == "unstructured") //assuming we have a cube here, needs expanded for zoo
+        if(!explicitMesh)
         {
-            int numElements = field_values.dtype().number_of_elements();
-
-            //local dimensions
-            vector<int64_t> l = {1,numElements};
-            //global dimensions
-            vector<int64_t> g = {numRanks,numElements};
-            //offsets
-            vector<int64_t> o = {rank,0};
-      
-
-            //write the field data
             int64_t varId = adios_define_var(adiosGroup,
-                                         (char*)fieldName.c_str(),
-                                         "",
-                                         adios_double,
-                                         dimsToStr(l, (fieldAssoc=="vertex"), explicitMesh).c_str(),
-                                         dimsToStr(g, (fieldAssoc=="vertex"), explicitMesh).c_str(),
-                                         dimsToStr(o, (fieldAssoc=="vertex"), explicitMesh).c_str());
+                                             (char*)fieldName.c_str(),
+                                             "",
+                                             adios_double,
+                                             dimsToStr(localDims, (fieldAssoc=="vertex")).c_str(),
+                                             dimsToStr(globalDims, (fieldAssoc=="vertex")).c_str(),
+                                             dimsToStr(offset, (fieldAssoc=="vertex")).c_str());
             adios_define_var_mesh(adiosGroup,
                                   (char*)fieldName.c_str(),
                                   meshName.c_str());
@@ -923,24 +909,100 @@ ADIOS::FieldVariable(const string &fieldName, const Node &node, const Node &n_to
                                        fieldName.c_str(),
                                        (fieldAssoc == "vertex" ? "point" : "cell"));
             adios_write(adiosFile, fieldName.c_str(), (void*)vals);
-
-            //write the offset data for the field
         }
-        else if(mesh_type =="unstructured")
+        else //need to write seperate array for each cell type
         {
-            cerr << "This is a bad place to be" << endl;
+            string mesh_type     = n_topo["type"].as_string();
+
+            //hack for a single cell type for unstructured
+            if(mesh_type == "unstructured") //assuming we have a cube here, needs expanded for zoo
+            {
+                int numElements = field_values.dtype().number_of_elements();
+
+                //local dimensions
+                vector<int64_t> l = {1,numElements};
+                //global dimensions
+                vector<int64_t> g = {numRanks,numElements};
+                //offsets
+                vector<int64_t> o = {rank,0};
+          
+
+                //write the field data
+                int64_t varId = adios_define_var(adiosGroup,
+                                             (char*)fieldName.c_str(),
+                                             "",
+                                             adios_double,
+                                             dimsToStr(l, (fieldAssoc=="vertex"), explicitMesh).c_str(),
+                                             dimsToStr(g, (fieldAssoc=="vertex"), explicitMesh).c_str(),
+                                             dimsToStr(o, (fieldAssoc=="vertex"), explicitMesh).c_str());
+                adios_define_var_mesh(adiosGroup,
+                                      (char*)fieldName.c_str(),
+                                      meshName.c_str());
+                adios_define_var_centering(adiosGroup,
+                                           fieldName.c_str(),
+                                           (fieldAssoc == "vertex" ? "point" : "cell"));
+                adios_write(adiosFile, fieldName.c_str(), (void*)vals);
+
+                //write the offset data for the field
+            }
+            else if(mesh_type =="unstructured")
+            {
+                cerr << "This is a bad place to be" << endl;
+            }
+      }
+/*    }
+    else
+    {
+        const vector<string> nodeVals = {"values/v0", "values/v1", "values/v2"};
+        const vector<string> names = {"velocity_x", "velocity_y", "velocity_z"};
+        
+        for(int z = 0; z < 3; z++)
+        {
+            const Node &field_values = node[nodeVals[z]];
+            //field_values.schema().print();
+            const double *vals = field_values.as_double_ptr();
+     
+            cerr << "we are a vector -- assoc: " << fieldAssoc << endl;
+            node.print_detailed();
+            cout<<"FIELD "<<fieldName<<" #= "<<field_values.dtype().number_of_elements()<<endl;
+            cout<<"localDims: "<<dimsToStr(localDims, (fieldAssoc=="vertex"), explicitMesh)<<endl;
+            cout<<"globalDims: "<<dimsToStr(globalDims, (fieldAssoc=="vertex"), explicitMesh)<<endl;
+            cout<<"offset: "<<dimsToStr(offset, (fieldAssoc=="vertex"), explicitMesh)<<endl;
+       
+            string mesh_type     = n_topo["type"].as_string();
+            //hack for a single cell type for unstructured
+            if(mesh_type == "unstructured") //assuming we have a cube here, needs expanded for zoo
+            {
+                int numElements = field_values.dtype().number_of_elements();
+
+                //local dimensions
+                vector<int64_t> l = {1,numElements};
+                //global dimensions
+                vector<int64_t> g = {numRanks,numElements};
+                //offsets
+                vector<int64_t> o = {rank,0};
+          
+
+                //write the field data
+                int64_t varId = adios_define_var(adiosGroup,
+                                             (char*)names[z].c_str(),
+                                             "",
+                                             adios_double,
+                                             dimsToStr(l, (fieldAssoc=="vertex"), explicitMesh).c_str(),
+                                             dimsToStr(g, (fieldAssoc=="vertex"), explicitMesh).c_str(),
+                                             dimsToStr(o, (fieldAssoc=="vertex"), explicitMesh).c_str());
+                adios_define_var_mesh(adiosGroup,
+                                      (char*)names[z].c_str(),
+                                      meshName.c_str());
+                adios_define_var_centering(adiosGroup,
+                                           names[z].c_str(),
+                                           (fieldAssoc == "vertex" ? "point" : "cell"));
+                adios_write(adiosFile, names[z].c_str(), (void*)vals);
+
+                //write the offset data for the field
+            }
         }
-
-
-        /*
-        vtkm::cont::ArrayHandle<vtkm::UInt8> shapes;
-        vtkm::cont::ArrayHandle<vtkm::IdComponent> num_indices;
-        vtkm::IdComponent topo_dimensionality;
-
-
-*/
-
-    }
+    }*/
     return true;
 }
 

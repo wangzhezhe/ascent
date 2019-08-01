@@ -1037,7 +1037,7 @@ VTKHStreamline::verify_params(const conduit::Node &params,
         res = false;
     }
 
-    cout<<"Need to add seed params"<<endl;
+    //cout<<"Need to add seed params"<<endl;
 
     return res;
 }
@@ -1060,6 +1060,7 @@ VTKHStreamline::execute()
     double stepSize = params()["stepSize"].as_float64();
     int maxSteps = params()["maxSteps"].as_int64();
     std::string seedMethod = params()["seedMethod"].as_string();
+    int gatherTraces = params()["gatherTraces"].as_int64();
 
 
     if (seedMethod == "randomWhole")
@@ -1100,6 +1101,11 @@ VTKHStreamline::execute()
     streamline.SetField(field_name);
     streamline.SetMaxSteps(maxSteps);
     streamline.SetStepSize(stepSize);
+    streamline.SetDumpOutputFiles(false);
+    if(gatherTraces == 1)
+      streamline.SetGatherTraces(true);
+    else
+      streamline.SetGatherTraces(false);
 
     vtkh::DataSet *streamline_output = NULL;
     streamline.Update();

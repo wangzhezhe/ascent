@@ -161,6 +161,34 @@ def dumpRawData(stats, outputFile) :
                 outputFile.write('%d, %d, %d, %s, %f\n' % (c, rank, nRanks, k, timeS))                
 
 
+def ParseLaghosAppFile(appOutputFile, stats) :
+    appLines = open(appOutputFile, 'r').readlines()
+    cycle = 0
+    appTimes = []
+    visTimes = []
+    for l in appLines :
+        if 'appTime' in l :
+            data = l.split(',')
+            cycle = int(data[0])
+            rank = int(data[1].split('_')[1])
+            nRanks = int(data[1].split('_')[2])
+            operation = data[2].strip()
+            timeMS = float(data[3])
+            appTimes.append(timeMS/1000.0)        
+        elif 'visTime' in l :
+            data = l.split(',')
+            cycle = int(data[0])
+            rank = int(data[1].split('_')[1])
+            nRanks = int(data[1].split('_')[2])
+            operation = data[2].strip()
+            timeMS = float(data[3])
+            visTimes.append(timeMS/1000.0)
+
+    for (a,v) in zip(appTimes, visTimes) :
+        stats.append({'appTime' : [a], 'visTime' : [v]})
+    return stats
+
+
 
 def ParseAppFile(appOutputFile, stats) :
     appLines = open(appOutputFile, 'r').readlines()
@@ -312,10 +340,17 @@ appOutputFile = sys.argv[3]
 outputFileName = sys.argv[4]
 outputFile = open(outputFileName, 'w')
 
-stats = ParseAppFile(appOutputFile, stats)
+
+if "laghos" in appOutputFile:
+    stats = ParseLaghosAppFile(appOutputFile, stats)
+else:
+    stats = ParseAppFile(appOutputFile, stats)
+
+
 if couplingType != 'noVis' :
     stats = ParseVisFiles(timingFiles, stats)
-    stats = ParseVisFiles(vtkhFiles, stats)
+    if vtkhFiles != "":
+      stats = ParseVisFiles(vtkhFiles, stats)
 
 print len(stats)
 #print stats[0]
@@ -328,10 +363,10 @@ if couplingType == 'tight' :
         fields = ['appTime','visTime','PreExecute','DoExecute','Composite','ExecScene']
         selector = [0, 0, 'max', 'max', 'max', 'max']
     elif visType == 'advect' :
-        fields = ['appTime','visTime', 'StreamlineFilter']
-        selector = [0, 0, 'max', 'max', 'max']
+        fields = ['appTime','visTime', 'PreExecute','DoExecute',"PostExecute",'StreamlineFilter']
+        selector = [0, 0, 'max', 'max', 'max', 'max']
     else :
-        print 'Unsupported visualization operation',  type(visType)
+        print 'Unsupported visualization operation',  visType, '   ', type(visType)
         sys.exit(-1)
 elif couplingType == 'loose' :
     if visType == 'iso' :
@@ -341,8 +376,8 @@ elif couplingType == 'loose' :
         fields = ['appTime', 'visTime', 'read', 'render', 'PreExecute','DoExecute','Composite','ts_time']
         selector = [0, 0, 'max', 'max', 'max', 'max', 'max', 'max']
     elif visType == 'advect' :
-        fields = ['appTime', 'visTime', 'read', 'point_average', 'contour', 'render', 'ts_time']
-        selector = [0, 0, 'max', 'max', 'max', 'max', 'max']
+        fields = ['appTime', 'visTime', 'read', 'advect', 'PreExecute', 'DoExecute', 'PostExecute', 'ts_time']
+        selector = [0, 0, 'max', 'max', 'max', 'max', 'max', 'max']
     else :
         print 'Unsupported visualization operation',  type(visType)
         sys.exit(-1)

@@ -586,7 +586,8 @@ int main(int argc, char *argv[])
 
             ascent.execute(actions);
             
-            RecordTime("visTime", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startVisit).count(), myid, mpi.WorldSize(), ti);
+            if (mpi.Root())
+                RecordTime("visTime", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startVisit).count(), myid, mpi.WorldSize(), ti);
          }
 
          if (gfprint)
@@ -622,7 +623,8 @@ int main(int argc, char *argv[])
             e_ofs.close();
          }
       }
-      RecordTime("appTime", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count(), myid, mpi.WorldSize(), ti);
+      if (mpi.Root())
+          RecordTime("appTime", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count(), myid, mpi.WorldSize(), ti);
    }
 
    switch (ode_solver_type)

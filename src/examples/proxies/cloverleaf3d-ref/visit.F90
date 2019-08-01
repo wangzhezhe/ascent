@@ -179,6 +179,18 @@ SUBROUTINE visit(my_ascent)
       CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity/values/u", chunks(c)%field%xvel0, nnodes)
       CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity/values/v", chunks(c)%field%yvel0, nnodes)
       CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity/values/w", chunks(c)%field%zvel0, nnodes)
+      ! velocity_x
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_x/association", "vertex")
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_x/topology", "mesh")
+      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity_x/values", chunks(c)%field%xvel0, nnodes)
+      ! velocity_y
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_y/association", "vertex")
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_y/topology", "mesh")
+      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity_y/values", chunks(c)%field%yvel0, nnodes)
+      ! velocity_z
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_z/association", "vertex")
+      CALL conduit_node_set_path_char8_str(sim_data,"fields/velocity_z/topology", "mesh")
+      CALL conduit_node_set_path_float64_ptr(sim_data,"fields/velocity_z/values", chunks(c)%field%zvel0, nnodes)
       ! CALL sim_data%print_detailed()
 
       WRITE(chunk_name, '(i6)') parallel%task+100001

@@ -87,7 +87,7 @@ TEST(ascent_mpi_runtime, test_render_mpi_2d_main_runtime)
     // Create the data.
     //
     Node data, verify_info;
-    create_3d_example_dataset(data,par_rank,par_size);
+    create_3d_example_dataset(data,32,par_rank,par_size);
 
 
 

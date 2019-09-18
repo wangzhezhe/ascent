@@ -17,6 +17,7 @@
               "numSeeds": 10
             }
           }
+<<<<<<< HEAD
        }
      }
     },
@@ -25,5 +26,11 @@
   },
   {
     "action": "reset"
+=======
+        },
+        "image_prefix": "energy_%04d"
+      }
+    }
+>>>>>>> upstream/develop
   }
 ]

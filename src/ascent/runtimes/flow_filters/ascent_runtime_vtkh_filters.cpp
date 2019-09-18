@@ -90,9 +90,11 @@
 #include <vtkh/filters/Lagrangian.hpp>
 #include <vtkh/filters/ParticleAdvection.hpp>
 #include <vtkh/filters/Log.hpp>
+#include <vtkh/filters/Recenter.hpp>
 #include <vtkh/filters/Slice.hpp>
 #include <vtkh/filters/Threshold.hpp>
 #include <vtkh/filters/VectorMagnitude.hpp>
+#include <vtkh/filters/HistSampling.hpp>
 #include <vtkm/cont/DataSet.h>
 #include <vtkm/filter/CleanGrid.h>
 
@@ -175,6 +177,7 @@ check_renders_surprises(const conduit::Node &renders_node)
   r_valid_paths.push_back("image_name");
   r_valid_paths.push_back("image_width");
   r_valid_paths.push_back("image_height");
+  r_valid_paths.push_back("scene_bounds");
   r_valid_paths.push_back("camera/look_at");
   r_valid_paths.push_back("camera/position");
   r_valid_paths.push_back("camera/up");
@@ -184,14 +187,13 @@ check_renders_surprises(const conduit::Node &renders_node)
   r_valid_paths.push_back("camera/zoom");
   r_valid_paths.push_back("camera/near_plane");
   r_valid_paths.push_back("camera/far_plane");
+  r_valid_paths.push_back("camera/azimuth");
+  r_valid_paths.push_back("camera/elevation");
   r_valid_paths.push_back("type");
   r_valid_paths.push_back("phi");
   r_valid_paths.push_back("theta");
   r_valid_paths.push_back("db_name");
-  // TODO: document
   r_valid_paths.push_back("render_bg");
-  r_valid_paths.push_back("camera/azimuth");
-  r_valid_paths.push_back("camera/elevation");
   r_valid_paths.push_back("annotations");
   r_valid_paths.push_back("output_path");
   r_valid_paths.push_back("fg_color");
@@ -459,6 +461,10 @@ public:
     if(rank == 0 && !conduit::utils::is_directory(m_db_path))
     {
         conduit::utils::create_directory(m_db_path);
+        // copy over cinema web resources
+        std::string cinema_root = conduit::utils::join_file_path(ASCENT_WEB_CLIENT_ROOT,
+                                                                 "cinema");
+        ascent::copy_directory(cinema_root, m_db_path);
     }
 
     std::stringstream ss;
@@ -1809,7 +1815,6 @@ VTKHClip::verify_params(const conduit::Node &params,
     valid_paths.push_back("plane/normal/x");
     valid_paths.push_back("plane/normal/y");
     valid_paths.push_back("plane/normal/z");
-    valid_paths.push_back("topology");
     std::string surprises = surprise_check(valid_paths, params);
 
     if(surprises != "")
@@ -1838,12 +1843,6 @@ VTKHClip::execute()
     vtkh::Clip clipper;
 
     clipper.SetInput(data);
-
-    if(params().has_child("topology"))
-    {
-      std::string topology = params()["topology"].as_string();
-      clipper.SetCellSet(topology);
-    }
 
     if(params().has_path("sphere"))
     {
@@ -2676,7 +2675,27 @@ ExecScene::execute()
     for(int i = 0; i < renders->size(); ++i)
     {
       const std::string image_name = renders->at(i).GetImageName() + ".png";
-      image_list->append() = image_name;
+      conduit::Node image_data;
+      image_data["image_name"] = image_name;
+      image_data["image_width"] = renders->at(i).GetWidth();
+      image_data["image_height"] = renders->at(i).GetHeight();
+
+      image_data["camera/position"].set(&renders->at(i).GetCamera().GetPosition()[0],3);
+      image_data["camera/look_at"].set(&renders->at(i).GetCamera().GetLookAt()[0],3);
+      image_data["camera/up"].set(&renders->at(i).GetCamera().GetViewUp()[0],3);
+      image_data["camera/zoom"] = renders->at(i).GetCamera().GetZoom();
+      image_data["camera/fov"] = renders->at(i).GetCamera().GetFieldOfView();
+      vtkm::Bounds bounds=  renders->at(i).GetSceneBounds();
+      double coord_bounds [6] = {bounds.X.Min,
+                                 bounds.Y.Min,
+                                 bounds.Z.Min,
+                                 bounds.X.Max,
+                                 bounds.Y.Max,
+                                 bounds.Z.Max};
+
+      image_data["scene_bounds"].set(coord_bounds, 6);
+
+      image_list->append() = image_data;
     }
 }
 //-----------------------------------------------------------------------------
@@ -2856,6 +2875,211 @@ VTKHLog::execute()
     vtkh::DataSet *log_output = logger.GetOutput();
 
     set_output<vtkh::DataSet>(log_output);
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHRecenter::VTKHRecenter()
+:Filter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHRecenter::~VTKHRecenter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHRecenter::declare_interface(Node &i)
+{
+    i["type_name"]   = "vtkh_recenter";
+    i["port_names"].append() = "in";
+    i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool
+VTKHRecenter::verify_params(const conduit::Node &params,
+                        conduit::Node &info)
+{
+    info.reset();
+
+    bool res = check_string("field",params, info, true);
+    res &= check_string("association",params, info, true);
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("association");
+
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
+    }
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHRecenter::execute()
+{
+
+    if(!input(0).check_type<vtkh::DataSet>())
+    {
+      ASCENT_ERROR("vtkh_recenter input must be a vtk-h dataset");
+    }
+
+    std::string field_name = params()["field"].as_string();
+    std::string association = params()["association"].as_string();
+    if(association != "vertex" && association != "element")
+    {
+      ASCENT_ERROR("Recenter: resulting field association '"<<association<<"'"
+                   <<" must have a value of 'vertex' or 'element'");
+    }
+
+    vtkh::DataSet *data = input<vtkh::DataSet>(0);
+    vtkh::Recenter recenter;
+
+    recenter.SetInput(data);
+    recenter.SetField(field_name);
+
+    if(association == "vertex")
+    {
+      recenter.SetResultAssoc(vtkm::cont::Field::Association::POINTS);
+    }
+    if(association == "element")
+    {
+      recenter.SetResultAssoc(vtkm::cont::Field::Association::CELL_SET);
+    }
+
+    recenter.Update();
+
+    vtkh::DataSet *recenter_output = recenter.GetOutput();
+
+    set_output<vtkh::DataSet>(recenter_output);
+}
+//-----------------------------------------------------------------------------
+
+VTKHHistSampling::VTKHHistSampling()
+:Filter()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHHistSampling::~VTKHHistSampling()
+{
+// empty
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHHistSampling::declare_interface(Node &i)
+{
+    i["type_name"]   = "vtkh_hist_sampling";
+    i["port_names"].append() = "in";
+    i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool
+VTKHHistSampling::verify_params(const conduit::Node &params,
+                        conduit::Node &info)
+{
+    info.reset();
+
+    bool res = check_string("field",params, info, true);
+    res &= check_numeric("bins",params, info, false);
+    res &= check_numeric("sample_rate",params, info, false);
+
+    std::vector<std::string> valid_paths;
+    valid_paths.push_back("field");
+    valid_paths.push_back("bins");
+    valid_paths.push_back("sample_rate");
+
+    std::string surprises = surprise_check(valid_paths, params);
+
+    if(surprises != "")
+    {
+      res = false;
+      info["errors"].append() = surprises;
+    }
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+void
+VTKHHistSampling::execute()
+{
+
+    if(!input(0).check_type<vtkh::DataSet>())
+    {
+        ASCENT_ERROR("vtkh_hist_sampling input must be a vtk-h dataset");
+    }
+
+    std::string field_name = params()["field"].as_string();
+
+    float sample_rate = .1f;
+    if(params().has_path("sample_rate"))
+    {
+      sample_rate = params()["sample_rate"].to_float32();
+      if(sample_rate <= 0.f || sample_rate >= 1.f)
+      {
+        ASCENT_ERROR("vtkh_hist_sampling 'sample_rate' value '"<<sample_rate<<"'"
+                     <<" not in the range (0,1)");
+      }
+    }
+
+    int bins = 128;
+
+    if(params().has_path("bins"))
+    {
+      bins = params()["bins"].to_int32();
+      if(bins <= 0.f)
+      {
+        ASCENT_ERROR("vtkh_hist_sampling 'bins' value '"<<bins<<"'"
+                     <<" must be positive");
+      }
+    }
+
+    vtkh::DataSet *data = input<vtkh::DataSet>(0);
+
+    // TODO: write helper functions for this
+    std::string ghost_field = "";
+    Node * meta = graph().workspace().registry().fetch<Node>("metadata");
+    if(meta->has_path("ghost_field"))
+    {
+      ghost_field = (*meta)["ghost_field"].as_string();
+      if(!data->GlobalFieldExists(ghost_field))
+      {
+        // can't find it
+        ghost_field = "";
+      }
+
+    }
+
+    vtkh::HistSampling hist;
+
+    hist.SetInput(data);
+    hist.SetField(field_name);
+    hist.SetNumBins(bins);
+    hist.SetSamplingPercent(sample_rate);
+    if(ghost_field != "")
+    {
+      hist.SetGhostField(ghost_field);
+    }
+
+    hist.Update();
+    vtkh::DataSet *hist_output = hist.GetOutput();
+
+    set_output<vtkh::DataSet>(hist_output);
 }
 
 //-----------------------------------------------------------------------------

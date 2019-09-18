@@ -583,27 +583,40 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
 
      if(params.has_path("file"))
      {
+       std::string script_fname = params["file"].as_string();
+
        Node n_py_src;
        // read script only on rank 0
        if(m_rank == 0)
        {
          ostringstream py_src;
-         std::string script_fname = params["file"].as_string();
          ifstream ifs(script_fname.c_str());
 
-         py_src << "# script from: " << script_fname << std::endl;
-         copy(istreambuf_iterator<char>(ifs),
-              istreambuf_iterator<char>(),
-              ostreambuf_iterator<char>(py_src));
-         n_py_src.set(py_src.str());
+         // guard by successful file open,
+         // otherwise our prefix comment will always cause
+         // a valid string to be passed to the node
+         // and we won't be able to detect when there was
+         // a bad file passed
+         if(ifs.is_open())
+         {
+             py_src << "# script from: " << script_fname << std::endl;
+             copy(istreambuf_iterator<char>(ifs),
+                  istreambuf_iterator<char>(),
+                  ostreambuf_iterator<char>(py_src));
+             n_py_src.set(py_src.str());
+             ifs.close();
+         }
        }
 
        relay::mpi::broadcast_using_schema(n_py_src,0,comm);
 
        if(!n_py_src.dtype().is_string())
        {
-         ASCENT_ERROR("broadcast of python script source failed");
+         ASCENT_ERROR("failed to read python script file "
+                      << script_fname
+                      << " and broadcast source");
        }
+
        // replace file param with source that includes actual script
        params.remove("file");
        params["source"] = n_py_src;
@@ -621,8 +634,42 @@ AscentRuntime::ConvertExtractToFlow(const conduit::Node &extract,
                   << params["source"].as_string(); // now include user's script
 
      params["source"] = py_src_final.str();
-
 #endif
+  }
+  else if(extract_type == "jupyter")
+  {
+    filter_name = "python_script";
+
+    // customize the names of the script integration module and funcs
+    params["interface/module"] = "ascent_extract";
+    params["interface/input"]  = "ascent_data";
+    params["interface/set_output"] = "ascent_set_output";
+
+     ostringstream py_src_final;
+#ifdef ASCENT_MPI_ENABLED
+    // for MPI case, inspect args, if script is passed via file,
+    // read contents on root and broadcast to other tasks
+    int comm_id = flow::Workspace::default_mpi_comm();
+    MPI_Comm comm = MPI_Comm_f2c(comm_id);
+    // inject helper that provides the mpi comm handle
+
+    py_src_final << "# ascent mpi comm helper function" << std::endl
+                 << "def ascent_mpi_comm_id():" << std::endl
+                 << "    return " << comm_id << std::endl
+                 << std::endl
+                 // bind ascent_mpi_comm_id into the module
+                 << "ascent_extract.ascent_mpi_comm_id = ascent_mpi_comm_id"
+                 << std::endl
+                 // import our code that connects to the bridge kernel server
+                 << "from ascent.mpi import jupyter_bridge "
+                 << std::endl;
+#else
+    // import our code that connects to the bridge kernel server
+    py_src_final << "from ascent import jupyter_bridge" << std::endl;
+#endif
+    // finally actually call the bridge kernel server
+    py_src_final << "jupyter_bridge()" << std::endl;
+    params["source"] = py_src_final.str();
   }
   // generic extract support
   else if(registered_filter_types()["extracts"].has_child(extract_type))
@@ -864,6 +911,7 @@ AscentRuntime::PopulateMetadata()
   (*meta)["cycle"] = cycle;
   (*meta)["time"] = time;
   (*meta)["refinement_level"] = m_refinement_level;
+  (*meta)["ghost_field"] = m_ghost_field_name;
 
 }
 //-----------------------------------------------------------------------------
@@ -1189,201 +1237,211 @@ AscentRuntime::CreateScenes(const conduit::Node &scenes)
 }
 
 void
-AscentRuntime::FindRenders(conduit::Node &out)
+AscentRuntime::FindRenders(conduit::Node &image_params, conduit::Node& image_list)
 {
-    out.reset();
+    image_list.reset();
 
     if(!w.registry().has_entry("image_list"))
     {
       return;
     }
 
-    Node *image_list = w.registry().fetch<Node>("image_list");
+    Node *images = w.registry().fetch<Node>("image_list");
 
-    const int size = image_list->number_of_children();
+    const int size = images->number_of_children();
+    image_params = *images;
     for(int i = 0; i < size; i++)
     {
-      out.append() = image_list->child(i).as_string();
+      image_list.append() = images->child(i)["image_name"].as_string();
     }
 
-    image_list->reset();
+    images->reset();
 
 }
 
 //-----------------------------------------------------------------------------
 void
-AscentRuntime::Execute(const conduit::Node &actions)
+AscentRuntime::BuildGraph(const conduit::Node &actions)
 {
-    ResetInfo();
-    // make sure we always have our source data
-    ConnectSource();
+  // exection will be enforced in the following order:
+  conduit::Node queries;
+  conduit::Node triggers;
+  conduit::Node pipelines;
+  conduit::Node scenes;
+  conduit::Node extracts;
 
-    // exection will be enforced in the following order:
-    conduit::Node queries;
-    conduit::Node triggers;
-    conduit::Node pipelines;
-    conduit::Node scenes;
-    conduit::Node extracts;
+  // Loop over the actions
+  for (int i = 0; i < actions.number_of_children(); ++i)
+  {
+      const Node &action = actions.child(i);
+      string action_name = action["action"].as_string();
 
-    bool do_execute = false;
-    bool do_reset= false;
-
-    // Loop over the actions
-    for (int i = 0; i < actions.number_of_children(); ++i)
-    {
-        const Node &action = actions.child(i);
-        string action_name = action["action"].as_string();
-
-        if(action_name == "add_pipelines")
+      if(action_name == "add_pipelines")
+      {
+        if(action.has_path("pipelines"))
         {
-          if(action.has_path("pipelines"))
-          {
-            pipelines.append() = action["pipelines"];
-          }
-          else
-          {
-            ASCENT_ERROR("action 'add_pipelines' missing child 'pipelines'");
-          }
-        }
-        else if(action_name == "add_scenes")
-        {
-          if(action.has_path("scenes"))
-          {
-            scenes.append() = action["scenes"];
-          }
-          else
-          {
-            ASCENT_ERROR("action 'add_scenes' missing child 'scenes'");
-          }
-        }
-        else if(action_name == "add_extracts")
-        {
-          if(action.has_path("extracts"))
-          {
-            extracts.append() = action["extracts"];
-          }
-          else
-          {
-            ASCENT_ERROR("action 'add_extracts' missing child 'extracts'");
-          }
-        }
-        else if(action_name == "add_triggers")
-        {
-          if(action.has_path("triggers"))
-          {
-            triggers.append() = action["triggers"];
-          }
-          else
-          {
-            ASCENT_ERROR("action 'add_triggers' missing child 'triggers'");
-          }
-        }
-        else if(action_name == "add_queries")
-        {
-          if(action.has_path("queries"))
-          {
-            queries.append() = action["queries"];
-          }
-          else
-          {
-            ASCENT_ERROR("action 'add_queries' missing child 'queries'");
-          }
-        }
-        else if( action_name == "execute")
-        {
-          do_execute = true;
-        }
-        else if( action_name == "reset")
-        {
-          do_reset = true;
+          pipelines.append() = action["pipelines"];
         }
         else
         {
-            ASCENT_ERROR("Unknown action ' "<<action_name<<"'");
+          ASCENT_ERROR("action 'add_pipelines' missing child 'pipelines'");
         }
-
-    }
-
-    // we are enforcing the order of exectution
-    for(int i = 0; i < queries.number_of_children(); ++i)
-    {
-      CreateQueries(queries.child(i));
-    }
-    for(int i = 0; i < triggers.number_of_children(); ++i)
-    {
-      CreateTriggers(triggers.child(i));
-    }
-    for(int i = 0; i < pipelines.number_of_children(); ++i)
-    {
-      CreatePipelines(pipelines.child(i));
-    }
-    for(int i = 0; i < scenes.number_of_children(); ++i)
-    {
-      CreateScenes(scenes.child(i));
-    }
-    for(int i = 0; i < extracts.number_of_children(); ++i)
-    {
-      CreateExtracts(extracts.child(i));
-    }
-
-    if(do_execute)
-    {
-
-      ConnectGraphs();
-      PopulateMetadata(); // add metadata so filters can access it
-      w.info(m_info["flow_graph"]);
-      //w.print();
-      //std::cout<<w.graph().to_dot();
-
-      // catch any errors that come up here and forward
-      // them up as a conduit error
-      try
-      {
-        w.execute();
       }
-#if defined(ASCENT_VTKM_ENABLED)
-      catch(vtkh::Error &e)
+      else if(action_name == "add_scenes")
       {
-        ASCENT_ERROR("Execution failed with vtkh: "<<e.what());
+        if(action.has_path("scenes"))
+        {
+          scenes.append() = action["scenes"];
+        }
+        else
+        {
+          ASCENT_ERROR("action 'add_scenes' missing child 'scenes'");
+        }
       }
-#endif
-      catch(conduit::Error &e)
+      else if(action_name == "add_extracts")
       {
-        throw e;
+        if(action.has_path("extracts"))
+        {
+          extracts.append() = action["extracts"];
+        }
+        else
+        {
+          ASCENT_ERROR("action 'add_extracts' missing child 'extracts'");
+        }
       }
-      catch(std::exception &e)
+      else if(action_name == "add_triggers")
       {
-        ASCENT_ERROR("Execution failed with: "<<e.what());
+        if(action.has_path("triggers"))
+        {
+          triggers.append() = action["triggers"];
+        }
+        else
+        {
+          ASCENT_ERROR("action 'add_triggers' missing child 'triggers'");
+        }
       }
-
-      Node msg;
-      this->Info(msg["info"]);
-      ascent::about(msg["about"]);
-      m_web_interface.PushMessage(msg);
-
-      Node renders;
-      FindRenders(renders);
-      m_info["images"] = renders;
-
-      const conduit::Node &expression_cache =
-        runtime::expressions::ExpressionEval::get_cache();
-
-      if(expression_cache.number_of_children() > 0)
+      else if(action_name == "add_queries")
       {
-        m_info["expressions"] = expression_cache;
+        if(action.has_path("queries"))
+        {
+          queries.append() = action["queries"];
+        }
+        else
+        {
+          ASCENT_ERROR("action 'add_queries' missing child 'queries'");
+        }
+      }
+      else if( action_name == "execute" ||
+               action_name == "reset")
+      {
+        // These actions are now deprecated. To avoid
+        // issues with existing integrations we will just
+        // do nothing
+      }
+      else
+      {
+          ASCENT_ERROR("Unknown action ' "<<action_name<<"'");
       }
 
-      m_web_interface.PushRenders(renders);
+  }
 
-      w.registry().reset();
-    }
+  // we are enforcing the order of exectution
+  for(int i = 0; i < queries.number_of_children(); ++i)
+  {
+    CreateQueries(queries.child(i));
+  }
+  for(int i = 0; i < triggers.number_of_children(); ++i)
+  {
+    CreateTriggers(triggers.child(i));
+  }
+  for(int i = 0; i < pipelines.number_of_children(); ++i)
+  {
+    CreatePipelines(pipelines.child(i));
+  }
+  for(int i = 0; i < scenes.number_of_children(); ++i)
+  {
+    CreateScenes(scenes.child(i));
+  }
+  for(int i = 0; i < extracts.number_of_children(); ++i)
+  {
+    CreateExtracts(extracts.child(i));
+  }
 
-    if(do_reset)
+  ConnectGraphs();
+}
+//-----------------------------------------------------------------------------
+void
+AscentRuntime::Execute(const conduit::Node &actions)
+{
+    ResetInfo();
+
+    conduit::Node diff_info;
+    bool different_actions = m_previous_actions.diff(actions, diff_info);
+
+    if(different_actions)
     {
-      // resets the entire workspace meaning all filters
-      // in the graph are cleared
+      // destroy existing graph an start anew
       w.reset();
+      ConnectSource();
+      BuildGraph(actions);
     }
+    else
+    {
+      // always ensure that we have the source
+      ConnectSource();
+    }
+
+    m_previous_actions = actions;
+
+    PopulateMetadata(); // add metadata so filters can access it
+
+    w.info(m_info["flow_graph"]);
+    m_info["actions"] = actions;
+    //w.print();
+    //std::cout<<w.graph().to_dot();
+
+    // catch any errors that come up here and forward
+    // them up as a conduit error
+    try
+    {
+      w.execute();
+    }
+#if defined(ASCENT_VTKM_ENABLED)
+    catch(vtkh::Error &e)
+    {
+      ASCENT_ERROR("Execution failed with vtkh: "<<e.what());
+    }
+#endif
+    catch(conduit::Error &e)
+    {
+      throw e;
+    }
+    catch(std::exception &e)
+    {
+      ASCENT_ERROR("Execution failed with: "<<e.what());
+    }
+
+    Node msg;
+    this->Info(msg["info"]);
+    ascent::about(msg["about"]);
+    m_web_interface.PushMessage(msg);
+
+    Node render_file_names;
+    Node renders;
+    FindRenders(renders, render_file_names);
+    m_info["images"] = renders;
+
+    const conduit::Node &expression_cache =
+      runtime::expressions::ExpressionEval::get_cache();
+
+    if(expression_cache.number_of_children() > 0)
+    {
+      m_info["expressions"] = expression_cache;
+    }
+
+    m_web_interface.PushRenders(render_file_names);
+
+    w.registry().reset();
 }
 
 void

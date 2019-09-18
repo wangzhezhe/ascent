@@ -382,6 +382,32 @@ public:
 };
 
 //-----------------------------------------------------------------------------
+class VTKHRecenter: public ::flow::Filter
+{
+public:
+    VTKHRecenter();
+    virtual ~VTKHRecenter();
+
+    virtual void   declare_interface(conduit::Node &i);
+    virtual bool   verify_params(const conduit::Node &params,
+                                 conduit::Node &info);
+    virtual void   execute();
+};
+
+//-----------------------------------------------------------------------------
+class VTKHHistSampling : public ::flow::Filter
+{
+public:
+    VTKHHistSampling();
+    virtual ~VTKHHistSampling();
+
+    virtual void   declare_interface(conduit::Node &i);
+    virtual bool   verify_params(const conduit::Node &params,
+                                 conduit::Node &info);
+    virtual void   execute();
+};
+
+//-----------------------------------------------------------------------------
 class VTKHNoOp : public ::flow::Filter
 {
 public:

@@ -87,13 +87,13 @@ set(ENABLE_CUDA OFF CACHE PATH "")
 set(VIS_MESH ON CACHE PATH "")
 
 # ascent
-set(ASCENT_DIR "/home/jkress/packages/ascent/install-release" CACHE PATH "")
+set(ASCENT_DIR "/home/jkress/packages/ascentMaster/install-release" CACHE PATH "")
 
 # conduit
 set(CONDUIT_DIR "/home/jkress/packages/conduit/install" CACHE PATH "")
 
 #vtk-h
-set(VTKH_DIR "/home/jkress/packages/vtk-h/install" CACHE PATH "")
+set(VTKH_DIR "/home/jkress/packages/vtkhMaster/install" CACHE PATH "")
 
 #
 # vtkm

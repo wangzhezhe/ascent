@@ -103,6 +103,7 @@ private:
     conduit::Node     m_scene_connections;
 
     conduit::Node     m_info;
+    conduit::Node     m_previous_actions;
 
     WebInterface      m_web_interface;
     int               m_refinement_level;
@@ -133,14 +134,14 @@ private:
     void ConvertSceneToFlow(const conduit::Node &scenes);
     void ConnectSource();
     void ConnectGraphs();
-    void ExecuteGraphs();
+
+    void BuildGraph(const conduit::Node &actions);
     void EnsureDomainIds();
     void PopulateMetadata();
 
     std::string GetDefaultImagePrefix(const std::string scene);
 
-    void FindRenders(conduit::Node &out);
-
+    void FindRenders(conduit::Node &image_params, conduit::Node &image_list);
 
     // internal reg helper
     static void RegisterFilterType(const std::string &role_path,

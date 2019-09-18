@@ -95,6 +95,7 @@ set(rover_sources
                   DEPENDS_ON ${rover_thirdparty_deps}
                  )
 
+vtkm_add_target_information(rover DEVICE_SOURCES ${rover_sources})
 ##########################################
 # Ensure we use c++11
 ##########################################
@@ -116,7 +117,7 @@ if(ENABLE_LOGGING)
   blt_add_target_compile_flags(TO rover FLAGS " -D ROVER_ENABLE_LOGGING=1")
 endif()
 
-if(ENABLE_OPENMP)
+if(OPENMP_FOUND)
   blt_add_target_compile_flags(TO rover FLAGS " -D ROVER_ENABLE_OPENMP=1")
 endif()
 
@@ -142,6 +143,7 @@ if(MPI_FOUND)
                   DEPENDS_ON ${rover_mpi_thirdparty_deps}
                   )
 
+  vtkm_add_target_information(rover_mpi DEVICE_SOURCES ${rover_sources})
   ##########################################
   # Ensure we use c++11
   ##########################################
@@ -167,7 +169,7 @@ if(MPI_FOUND)
   if(ENABLE_LOGGING)
     blt_add_target_compile_flags(TO rover_mpi FLAGS " -D ROVER_ENABLE_LOGGING=1")
   endif()
-  if(ENABLE_OPENMP)
+  if(OPENMP_FOUND)
     blt_add_target_compile_flags(TO rover FLAGS " -D ROVER_ENABLE_OPENMP=1")
   endif()
 

@@ -28,7 +28,7 @@ def cmake_cache_entry(name, value, vtype=None):
     return 'set({0} "{1}" CACHE {2} "")\n\n'.format(name, value, vtype)
 
 
-class Ascent(Package):
+class Ascent(Package, CudaPackage):
     """Ascent is an open source many-core capable lightweight in situ
     visualization and analysis infrastructure for multi-physics HPC
     simulations."""
@@ -51,6 +51,7 @@ class Ascent(Package):
     variant('test', default=True, description='Enable Ascent unit tests')
 
     variant("mpi", default=True, description="Build Ascent MPI Support")
+    variant("serial", default=True, description="build serial (non-mpi) libraries")
 
     # variants for language support
     variant("python", default=True, description="Build Ascent Python support")
@@ -73,10 +74,14 @@ class Ascent(Package):
     # package dependencies
     ###########################################################################
 
-    depends_on("cmake@3.9.2:3.9.999", type='build')
+    depends_on("cmake@3.14.1:3.14.5")
     depends_on("conduit~python", when="~python")
     depends_on("conduit+python", when="+python+shared")
     depends_on("conduit~shared~python", when="~shared")
+    depends_on("conduit~python~mpi", when="~python~mpi")
+    depends_on("conduit+python~mpi", when="+python+shared~mpi")
+    depends_on("conduit~shared~python~mpi", when="~shared~mpi")
+    #depends_on("cuda", when="+cuda")
 
     #######################
     # Python
@@ -86,6 +91,7 @@ class Ascent(Package):
     depends_on("python+shared", when="+python+shared")
     extends("python", when="+python+shared")
     depends_on("py-numpy", when="+python+shared", type=('build', 'run'))
+    depends_on("py-pip", when="+python+shared", type=('build', 'run'))
 
     #######################
     # MPI
@@ -230,7 +236,7 @@ class Ascent(Package):
 
         if self.compiler.fc:
             # even if this is set, it may not exist so do one more sanity check
-            f_compiler = which(env["SPACK_FC"])
+            f_compiler = env["SPACK_FC"]
 
         #######################################################################
         # By directly fetching the names of the actual compilers we appear
@@ -286,7 +292,7 @@ class Ascent(Package):
         if "+fortran" in spec and f_compiler is not None:
             cfg.write(cmake_cache_entry("ENABLE_FORTRAN", "ON"))
             cfg.write(cmake_cache_entry("CMAKE_Fortran_COMPILER",
-                                        f_compiler.path))
+                                        f_compiler))
         else:
             cfg.write("# no fortran compiler found\n\n")
             cfg.write(cmake_cache_entry("ENABLE_FORTRAN", "OFF"))
@@ -350,18 +356,37 @@ class Ascent(Package):
             cfg.write(cmake_cache_entry("ENABLE_DOCS", "OFF"))
 
         #######################
+        # Serial
+        #######################
+
+        if "+serial" in spec:
+            cfg.write(cmake_cache_entry("ENABLE_SERIAL", "ON"))
+        else:
+            cfg.write(cmake_cache_entry("ENABLE_SERIAL", "OFF"))
+
+
+        #######################
         # MPI
         #######################
 
         cfg.write("# MPI Support\n")
 
         if "+mpi" in spec:
+            mpicc_path = spec['mpi'].mpicc
+            mpicxx_path = spec['mpi'].mpicxx
+            mpifc_path = spec['mpi'].mpifc
+            # if we are using compiler wrappers on cray systems
+            # use those for mpi wrappers, b/c  spec['mpi'].mpicxx 
+            # etc make return the spack compiler wrappers 
+            # which can trip up mpi detection in CMake 3.14
+            if cpp_compiler == "CC":
+                mpicc_path = "cc"
+                mpicxx_path = "CC"
+                mpifc_path = "ftn"
             cfg.write(cmake_cache_entry("ENABLE_MPI", "ON"))
-            cfg.write(cmake_cache_entry("MPI_C_COMPILER", spec['mpi'].mpicc))
-            cfg.write(cmake_cache_entry("MPI_CXX_COMPILER",
-                                        spec['mpi'].mpicxx))
-            cfg.write(cmake_cache_entry("MPI_Fortran_COMPILER",
-                                        spec['mpi'].mpifc))
+            cfg.write(cmake_cache_entry("MPI_C_COMPILER", mpicc_path ))
+            cfg.write(cmake_cache_entry("MPI_CXX_COMPILER", mpicxx_path ))
+            cfg.write(cmake_cache_entry("MPI_Fortran_COMPILER", mpifc_path ))
             mpiexe_bin = join_path(spec['mpi'].prefix.bin, 'mpiexec')
             if os.path.isfile(mpiexe_bin):
                 # starting with cmake 3.10, FindMPI expects MPIEXEC_EXECUTABLE
@@ -403,6 +428,22 @@ class Ascent(Package):
 
             cfg.write("# vtk-h from spack\n")
             cfg.write(cmake_cache_entry("VTKH_DIR", spec['vtkh'].prefix))
+
+            if "+cuda" in spec:
+                cfg.write(cmake_cache_entry("VTKm_ENABLE_CUDA","ON"))
+                cfg.write(cmake_cache_entry("CMAKE_CUDA_HOST_COMPILER",''.format(env["SPACK_CXX"])))
+                #if 'cuda_arch' in spec.variants:
+                #    cuda_arch = spec.variants['cuda_arch'].value[0]
+                #    vtkm_cuda_arch = "native"
+                #    arch_map = {"75":"turing", "70":"volta",
+                #                "62":"pascal", "61":"pascal", "60":"pascal",
+                #                "53":"maxwell", "52":"maxwell", "50":"maxwell",
+                #                "35":"kepler", "32":"kepler", "30":"kepler"}
+                #    if cuda_arch in arch_map:
+                #      vtkm_cuda_arch = arch_map[cuda_arch]
+                #    cfg.write(cmake_cache_entry('VTKm_CUDA_Architecture','{0}'.format(vtkm_cuda_arch)))
+            else:
+                cfg.write(cmake_cache_entry("VTKm_ENABLE_CUDA","OFF"))
 
         else:
             cfg.write("# vtk-h not built by spack \n")

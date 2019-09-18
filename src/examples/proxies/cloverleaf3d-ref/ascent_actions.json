@@ -18,12 +18,12 @@
   },
    {
     "action": "add_extracts",
-    "extracts": 
+    "extracts":
     {
       "ADIOS":
       {
         "type": "adios",
-         "params": 
+         "params":
          {
              "filename": "output.bp",
              "transport": "file"

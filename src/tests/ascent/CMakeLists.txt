@@ -71,6 +71,7 @@ set(BASIC_TESTS t_ascent_smoke
                 t_ascent_slice
                 t_ascent_vector_magnitude
                 t_ascent_flow_runtime
+                t_ascent_recenter
                 t_ascent_rover
                 t_ascent_lagrangian
                 t_ascent_log
@@ -90,8 +91,8 @@ set(MPI_TESTS  t_ascent_mpi_smoke
 
 # include the "ascent" pipeline
 if(VTKM_FOUND)
-   list(APPEND BASIC_TESTS t_ascent_ascent_runtime
-                           t_ascent_vtkh_data_adapter)
+   list(APPEND BASIC_TESTS t_ascent_ascent_runtime)
+   list(APPEND VTKH_DEP_TESTS t_ascent_vtkh_data_adapter)
    list(APPEND MPI_TESTS   t_ascent_mpi_ascent_runtime
                            t_ascent_mpi_relay_extract)
 endif()
@@ -110,11 +111,22 @@ endif()
 ################################
 # Add main tests
 ################################
-message(STATUS "Adding ascent lib unit tests")
-foreach(TEST ${BASIC_TESTS})
-    add_cpp_test(TEST ${TEST} DEPENDS_ON ascent)
-endforeach()
-
+if (ENABLE_SERIAL)
+    message(STATUS "Adding ascent lib unit tests")
+    foreach(TEST ${BASIC_TESTS})
+        add_cpp_test(TEST ${TEST} DEPENDS_ON ascent)
+    endforeach()
+    
+    foreach(TEST ${VTKH_DEP_TESTS})
+        add_cpp_test(TEST ${TEST} DEPENDS_ON ascent)
+    endforeach()
+    
+    if(VTKM_FOUND)
+      # special test case where we test vtkm conversions
+       vtkm_add_target_information(t_ascent_vtkh_data_adapter
+                                   DEVICE_SOURCES t_ascent_vtkh_data_adapter.cpp)
+    endif()
+endif()
 ################################
 # Add optional tests
 ################################

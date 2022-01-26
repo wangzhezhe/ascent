@@ -32,8 +32,13 @@ option(ENABLE_UTILS       "Build Utilities"           ON)
 option(ENABLE_LOGGING     "Enabe data logging"        OFF)
 option(ENABLE_DOCS        "Build Documentation"       ON)
 
+option(ENABLE_MFEM        "Enable MFEM support"       ON)
+option(ENABLE_ADIOS2      "Build with ADIOS2"         ON)
+option(ENABLE_FIDES       "Build with Fides"          ON)
+
+
 #####################################################
-# Note: Third party libs like MFEM, FIDES, etc are 
+# Note: Third party libs like MFEM, FIDES, etc are
 #       enabled when you provide MFEM_DIR, etc
 #####################################################
 
@@ -90,7 +95,7 @@ endif()
 ################################
 # Init BLT
 ################################
-# This also includes 
+# This also includes
 # our BLT defaults
 include(cmake/SetupBLT.cmake)
 
@@ -129,6 +134,9 @@ include(cmake/SetupIncludes.cmake)
 ################################
 add_subdirectory(thirdparty_builtin)
 
+find_package(ADIOS2 REQUIRED)
+find_package(Fides REQUIRED)
+set(ASCENT_ADIOS2_ENABLED TRUE)
 
 ################################
 # Add our libs

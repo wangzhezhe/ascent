@@ -44,9 +44,9 @@
     #ifdef ASCENT_BABELFLOW_ENABLED
     #include <ascent_runtime_babelflow_filters.hpp>
     #endif
-    #ifdef ASCENT_FIDES_ENABLED
+    //#ifdef ASCENT_FIDES_ENABLED
     #include <ascent_runtime_adios2_filters.hpp>
-    #endif
+    //#endif
 #endif
 
 
@@ -155,9 +155,9 @@ register_builtin()
     AscentRuntime::register_filter_type<BFlowIso>("extracts", "bflow_iso");
 #endif
 
-#if defined(ASCENT_ADIOS2_ENABLED)
+//#if defined(ASCENT_ADIOS2_ENABLED)
     AscentRuntime::register_filter_type<ADIOS2>("extracts","ADIOS2");
-#endif
+//#endif
 
 #endif
 

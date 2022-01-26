@@ -72,6 +72,7 @@
 #include <vtkh/filters/HistSampling.hpp>
 #include <vtkh/filters/PointTransform.hpp>
 #include <vtkm/cont/DataSet.h>
+#include <vtkm/io/VTKDataSetWriter.h>
 
 #include <ascent_vtkh_data_adapter.hpp>
 #include <ascent_runtime_conduit_to_vtkm_parsing.hpp>
@@ -3322,6 +3323,8 @@ VTKHParticleAdvection::verify_params(const conduit::Node &params,
     res &= check_numeric("seed_bounding_box_ymax", params, info, true, true);
     res &= check_numeric("seed_bounding_box_zmin", params, info, true, true);
     res &= check_numeric("seed_bounding_box_zmax", params, info, true, true);
+    res &= check_string("record_trajectories",params, info, true);
+    res &= check_string("write_streamlines",params, info, true);
 
     std::vector<std::string> valid_paths;
     valid_paths.push_back("field");
@@ -3334,6 +3337,8 @@ VTKHParticleAdvection::verify_params(const conduit::Node &params,
     valid_paths.push_back("seed_bounding_box_ymax");
     valid_paths.push_back("seed_bounding_box_zmin");
     valid_paths.push_back("seed_bounding_box_zmax");
+    valid_paths.push_back("record_trajectories");
+    valid_paths.push_back("write_streamlines");
 
     std::string surprises = surprise_check(valid_paths, params);
 
@@ -3421,9 +3426,35 @@ VTKHParticleAdvection::execute()
     }
     auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
 
+    //rename ghost cells
+    vtkm::Id numDS = data.GetNumberOfDomains();
+    for (vtkm::Id i = 0; i < numDS; i++)
+    {
+      if(data.GetDomain(i).HasField("topo_ghosts"))
+      {
+          auto temp = data.GetDomain(i).GetField("topo_ghosts");
+
+          if(temp.GetNumberOfValues() >= 1)
+          {
+              auto ghostArr = temp.GetData().AsArrayHandle<vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
+              const vtkm::FloatDefault* buff = ghostArr.GetReadPointer();
+              vtkm::cont::ArrayHandle<vtkm::UInt8> ghosts;
+              ghosts.Allocate(temp.GetNumberOfValues());
+              for (vtkm::Id z = 0; z < temp.GetNumberOfValues(); z++)
+              {
+                  ghosts.WritePortal().Set(z, static_cast<vtkm::UInt8>(buff[z]));
+              }
+              data.GetDomain(i).AddCellField("vtkmGhostCells", ghosts);
+              //data.GetDomain(i).RemoveField("topo_ghosts");
+          }
+      }
+    }
+
+
+data.PrintSummary(cerr);
 
     vtkh::DataSet *output = nullptr;
-    if (record_trajectories)
+    if (params()["record_trajectories"].as_string().compare("true") == 0)
     {
       vtkh::Streamline sl;
       sl.SetStepSize(stepSize);
@@ -3444,6 +3475,25 @@ VTKHParticleAdvection::execute()
       pa.SetInput(&data);
       pa.Update();
       output = pa.GetOutput();
+    }
+
+    if(params()["write_streamlines"].as_string().compare("true") == 0)
+    {
+       int rank = 0;
+#ifdef ASCENT_MPI_ENABLED
+      MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+      MPI_Comm_rank(mpi_comm, &rank);
+#endif
+
+      int numDomains = output->GetNumberOfDomains();
+      std::cerr << "num domains " << numDomains << std::endl;
+      for(int i = 0; i < numDomains; i++)
+      {
+        char fileNm[128];
+        sprintf(fileNm, "ascentStreamlines.step%d.rank%d.domain%d.vtk", data.GetCycle(), rank, i);
+        vtkm::io::VTKDataSetWriter write(fileNm);
+        write.WriteDataSet(output->GetDomain(i));
+      }
     }
 
     // we need to pass through the rest of the topologies, untouched,

@@ -115,7 +115,7 @@ set(VTKm_DIR "/home/jkress/packages/visualizationPerformanceEvaluation/vtk-m/ins
 #set(HDF5_DIR "/opt/hdf5/" CACHE PATH "")
 #set(HDF5_INCLUDE_DIRS "/opt/hdf5/include" CACHE PATH "")
 
-set(ADIOS2_DIR "/home/jkress/packages/visualizationPerformanceEvaluation/adios2/install/lib/cmake/adios2" CACHE PATH "")
+set(ADIOS2_DIR "/home/jkress/packages/visualizationPerformanceEvaluation/adios2/install/" CACHE PATH "")
 
 set(ENABLE_FIDES ON CACHE PATH "")
 set(Fides_DIR "/home/jkress/packages/visualizationPerformanceEvaluation/fides/install/lib/cmake/fides" CACHE PATH "")

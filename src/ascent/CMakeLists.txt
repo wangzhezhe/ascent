@@ -40,6 +40,7 @@ set(ASCENT_MFEM_ENABLED ${MFEM_FOUND})
 set(ASCENT_DRAY_ENABLED ${DRAY_FOUND})
 set(ASCENT_PYTHON_ENABLED ${PYTHON_FOUND})
 set(ASCENT_FIDES_ENABLED ${FIDES_FOUND})
+set(ASCENT_GENTEN_ENABLED ${GENTEN_FOUND})
 
 
 if(OCCA_FOUND AND UMPIRE_FOUND)
@@ -235,6 +236,11 @@ if(DRAY_FOUND)
   list(APPEND ascent_sources runtimes/flow_filters/ascent_runtime_dray_filters.cpp)
 endif()
 
+if(GENTEN_FOUND)
+    list(APPEND ascent_headers runtimes/flow_filters/ascent_runtime_genten_filters.hpp)
+    list(APPEND ascent_sources runtimes/flow_filters/ascent_runtime_genten_filters.cpp)
+endif()
+
 ##############################
 # optional features
 #############################
@@ -318,6 +324,10 @@ if(DRAY_FOUND)
     list(APPEND ascent_thirdparty_libs dray)
 endif()
 
+if(GENTEN_FOUND)
+    list(APPEND ascent_thirdparty_libs genten)
+endif()
+
 
 ##########################################
 # Build a serial version of ascent
@@ -355,6 +365,12 @@ if (ENABLE_SERIAL)
         endif()
     endif()
 
+    if(GENTEN_FOUND)
+        if(CUDA_FOUND)
+            list(APPEND ascent_device_sources runtimes/flow_filters/ascent_runtime_genten_filters.cpp)
+        endif()
+    endif()
+
     # install target for serial ascent lib
     install(TARGETS ascent
             EXPORT  ascent
@@ -385,6 +401,8 @@ if (ENABLE_SERIAL)
                           vtkm_worklet
                           vtkm_source
                           vtkm_cont
+                          vtkm_cont_testing
+                          vtkm_lodepng
                           vtkmdiympi_nompi
                           )
 
@@ -412,7 +430,7 @@ endif()
 if(MPI_FOUND)
 
     # req'd libs
-    set(ascent_mpi_thirdparty_libs mpi conduit_relay_mpi)
+    set(ascent_mpi_thirdparty_libs mpi conduit_relay_mpi conduit_relay_mpi_io)
 
     if (BABELFLOW_FOUND)
       if(CMAKE_BUILD_TYPE STREQUAL "DEBUG")
@@ -517,6 +535,8 @@ if(MPI_FOUND)
                           vtkm_worklet
                           vtkm_source
                           vtkm_cont
+                          vtkm_cont_testing
+                          vtkm_lodepng
                           vtkmdiympi_nompi
                           )
 

@@ -4,7 +4,9 @@
 # other details. No copyright assignment is required to contribute to Ascent.
 ###############################################################################
 
-set(rover_thirdparty_deps vtkh_lodepng vtkm vtkh conduit conduit_relay)
+#set(rover_thirdparty_deps vtkh_lodepng vtkm vtkh conduit conduit_relay)
+#TODO, better ways to label this, vtkh or vtkh_mpi, one of these two options?
+set(rover_thirdparty_deps vtkh_lodepng vtkm vtkh_mpi conduit conduit_relay)
 
 set(rover_headers
     domain.hpp

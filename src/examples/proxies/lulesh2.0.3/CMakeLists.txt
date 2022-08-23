@@ -56,15 +56,16 @@ install(FILES ASCENT_README.md
 
 if(MPI_FOUND)
 
-    set(lulesh_par_deps ascent_mpi mpi)
+    set(lulesh_par_deps ascent_mpi mpi vtkh_mpi)
     if(OPENMP_FOUND)
            list(APPEND lulesh_par_deps openmp)
     endif()
-
+    message ("vtkh include", ${VTKh_INCLUDE_DIRS})
     blt_add_executable(
         NAME        lulesh_par
         SOURCES     ${LULESH_SOURCES}
         DEPENDS_ON  ${lulesh_par_deps}
+        INCLUDES   ${VTKh_INCLUDE_DIRS}
         OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
     blt_add_target_compile_flags(TO lulesh_par FLAGS "-DUSE_MPI=1 ${lulesh_openmp_flags}")

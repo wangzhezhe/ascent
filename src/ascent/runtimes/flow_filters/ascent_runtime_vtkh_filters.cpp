@@ -3383,7 +3383,9 @@ VTKHParticleAdvection::execute()
 
     std::string topo_name = collection->field_topology(field_name);
     vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
+    Node meta = Metadata::n_metadata;
+    int cycle = meta["cycle"].to_int32();
+    std::cout << "debug meta data 0:" << cycle << "," << field_name << "," << topo_name << std::endl;
 
     int numSeeds = get_int32(params()["num_seeds"], data_object);
     int numSteps = get_int32(params()["num_steps"], data_object);
@@ -3476,6 +3478,10 @@ data.PrintSummary(cerr);
       pa.Update();
       output = pa.GetOutput();
     }
+    
+    std::cout << "--debug output start---" << std::endl;
+    output->PrintSummary(std::cout);
+    std::cout << "--debug output end---" << std::endl;
 
     if(params()["write_streamlines"].as_string().compare("true") == 0)
     {
@@ -3490,7 +3496,8 @@ data.PrintSummary(cerr);
       for(int i = 0; i < numDomains; i++)
       {
         char fileNm[128];
-        sprintf(fileNm, "ascentStreamlines.step%d.rank%d.domain%d.vtk", data.GetCycle(), rank, i);
+        std::cout << "debug data meta info " << cycle << "," <<  rank << "," << i << std::endl;
+        sprintf(fileNm, "ascentStreamlines.step%d.rank%d.domain%d.vtk", cycle, rank, i);
         vtkm::io::VTKDataSetWriter write(fileNm);
         write.WriteDataSet(output->GetDomain(i));
       }

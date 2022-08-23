@@ -19,6 +19,12 @@
 #include <string>
 #include <vector>
 
+#include <chrono>
+#include <sys/time.h>
+#include <stdio.h>
+#include <iostream>
+#include <fstream>
+
 //-----------------------------------------------------------------------------
 // -- begin ascent:: --
 //-----------------------------------------------------------------------------
@@ -36,6 +42,9 @@ namespace runtime
 //-----------------------------------------------------------------------------
 namespace filters
 {
+
+static std::ofstream *timingInfo = NULL;    
+void RecordTime(const std::string &nm, double time);
 
 namespace detail
 {

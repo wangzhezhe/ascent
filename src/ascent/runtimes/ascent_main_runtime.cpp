@@ -16,6 +16,7 @@
 // standard lib includes
 #include <string.h>
 #include <algorithm>
+using namespace std::chrono;
 
 //-----------------------------------------------------------------------------
 // thirdparty includes
@@ -1658,9 +1659,10 @@ AscentRuntime::Execute(const conduit::Node &actions)
         // w.graph().save_dot_html("ascent_flow_graph.html");
 
 #if defined(ASCENT_VTKM_ENABLED)
+        
         if(log_timings)
-        {
-          int cycle = 0;
+        { 
+          int cycle;
           if(Metadata::n_metadata.has_path("cycle"))
           {
             cycle = Metadata::n_metadata["cycle"].to_int32();
@@ -1672,7 +1674,12 @@ AscentRuntime::Execute(const conduit::Node &actions)
         }
 #endif
         // now execute the data flow graph
+        auto start = high_resolution_clock::now();
         w.execute();
+        auto stop = high_resolution_clock::now();
+        int cycle = Metadata::n_metadata["cycle"].to_int32();
+        auto duration_micro = duration_cast<microseconds> (stop - start);
+        std::cout <<" INFO rank "<< m_rank<< " cycle " << cycle << " ascent_execution_time "<<duration_micro.count()*0.000001<<std::endl;
 
 #if defined(ASCENT_VTKM_ENABLED)
         if(log_timings)

@@ -45,6 +45,7 @@ SUBROUTINE visit(my_ascent)
   INTEGER :: gnxc,gnyc,gnzc,gnxv,gnyv,gnzv
   INTEGER :: ghost_flag
   REAL(KIND=8)    :: temp_var
+  REAL(KIND=8)    :: ascent_start_time,ascent_end_time
 
   CHARACTER(len=80)           :: name
   CHARACTER(len=10)           :: chunk_name,step_name
@@ -198,7 +199,7 @@ SUBROUTINE visit(my_ascent)
       savename = trim(trim(name) //trim(chunk_name)//trim(step_name))
 
       CALL ascent_timer_stop(C_CHAR_"COPY_DATA"//C_NULL_CHAR)
-
+      
       sim_actions = conduit_node_create()
       add_scene_act = conduit_node_append(sim_actions)
       CALL conduit_node_set_path_char8_str(add_scene_act,"action", "add_scenes")
@@ -206,10 +207,12 @@ SUBROUTINE visit(my_ascent)
       scenes = conduit_node_fetch(add_scene_act,"scenes")
       CALL conduit_node_set_path_char8_str(scenes,"s1/plots/p1/type", "volume")
       CALL conduit_node_set_path_char8_str(scenes,"s1/plots/p1/field", "energy")
-
+      WRITE(*,*)'INFO ASCENT_PUBLISH_START'
+      ascent_start_time = timer()
       CALL ascent_publish(my_ascent, sim_data)
       CALL ascent_execute(my_ascent, sim_actions)
-
+      ascent_end_time = timer()
+      WRITE(*,*)'INFO ASCENT_EXEC_TAKES',ascent_end_time - ascent_start_time
       CALL conduit_node_destroy(sim_actions)
       CALL conduit_node_destroy(sim_data)
 

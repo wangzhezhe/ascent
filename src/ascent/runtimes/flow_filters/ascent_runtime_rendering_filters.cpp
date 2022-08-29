@@ -1032,6 +1032,7 @@ DefaultRender::verify_params(const conduit::Node &params,
 void
 DefaultRender::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<vtkm::Bounds>())
     {
@@ -1240,6 +1241,8 @@ DefaultRender::execute()
       renders->push_back(render);
     }
     set_output<std::vector<vtkh::Render>>(renders);
+    
+    RecordTime("DefaultRender", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 //-----------------------------------------------------------------------------
@@ -1269,6 +1272,8 @@ VTKHBounds::declare_interface(Node &i)
 void
 VTKHBounds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+    
     vtkm::Bounds *bounds = new vtkm::Bounds;
 
     if(!input(0).check_type<DataObject>())
@@ -1286,6 +1291,8 @@ VTKHBounds::execute()
     }
 
     set_output<vtkm::Bounds>(bounds);
+    
+    RecordTime("Bounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -1317,6 +1324,8 @@ VTKHUnionBounds::declare_interface(Node &i)
 void
 VTKHUnionBounds::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<vtkm::Bounds>())
     {
         ASCENT_ERROR("'a' must be a vtkm::Bounds * instance");
@@ -1335,6 +1344,8 @@ VTKHUnionBounds::execute()
     result->Include(*bounds_a);
     result->Include(*bounds_b);
     set_output<vtkm::Bounds>(result);
+    
+    RecordTime("UnionBounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1364,6 +1375,8 @@ AddPlot::declare_interface(Node &i)
 void
 AddPlot::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<detail::AscentScene>())
     {
         ASCENT_ERROR("'scene' must be a AscentScene * instance");
@@ -1385,6 +1398,8 @@ AddPlot::execute()
       scene->AddRenderer(cont);
     }
     set_output<detail::AscentScene>(scene);
+    
+    RecordTime("AddPlot", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1476,6 +1491,8 @@ CreatePlot::verify_params(const conduit::Node &params,
 void
 CreatePlot::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
       ASCENT_ERROR("create_plot input must be a data object");
@@ -1665,6 +1682,7 @@ CreatePlot::execute()
 
     set_output<detail::RendererContainer>(container);
 
+    RecordTime("CreatePlot", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -1690,8 +1708,12 @@ CreateScene::declare_interface(Node &i)
 void
 CreateScene::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
     detail::AscentScene *scene = new detail::AscentScene(&graph().workspace().registry());
     set_output<detail::AscentScene>(scene);
+    
+    RecordTime("CreateScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1721,6 +1743,9 @@ ExecScene::declare_interface(conduit::Node &i)
 void
 ExecScene::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+
+
     if(!input(0).check_type<detail::AscentScene>())
     {
         ASCENT_ERROR("'scene' must be a AscentScene * instance");
@@ -1771,6 +1796,7 @@ ExecScene::execute()
       image_list->append() = image_data;
     }
 
+    RecordTime("ExecScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 //-----------------------------------------------------------------------------
 

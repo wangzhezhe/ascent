@@ -107,6 +107,26 @@ namespace runtime
 namespace filters
 {
 
+void RecordTime(const std::string &nm, double time)
+{
+    int rank = 0, numRanks = 0;
+#ifdef ASCENT_MPI_ENABLED
+    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+    MPI_Comm_rank(mpi_comm, &rank);
+    MPI_Comm_size(mpi_comm, &numRanks);
+#endif
+    
+    if (timingInfo == NULL)
+    {
+        timingInfo = new std::ofstream;
+        char nm[32];
+        sprintf(nm, "timing.%d.out", rank);
+        timingInfo->open(nm, std::ofstream::out);
+    }
+    (*timingInfo)<<"ASCENT_"<<nm<<"_"<<rank<<"_"<<numRanks<<" "<<time<<std::endl;
+    //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
+}
+
 
 VTKHMarchingCubes::VTKHMarchingCubes()
 :Filter()
@@ -167,6 +187,7 @@ VTKHMarchingCubes::verify_params(const conduit::Node &params,
 void
 VTKHMarchingCubes::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<DataObject>())
     {
@@ -236,6 +257,8 @@ VTKHMarchingCubes::execute()
     DataObject *res =  new DataObject(new_coll);
     delete iso_output;
     set_output<DataObject>(res);
+    
+    RecordTime("ContourFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -288,6 +311,7 @@ VTKHVectorMagnitude::verify_params(const conduit::Node &params,
 void
 VTKHVectorMagnitude::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<DataObject>())
     {
@@ -340,6 +364,8 @@ VTKHVectorMagnitude::execute()
     DataObject *res =  new DataObject(new_coll);
     delete mag_output;
     set_output<DataObject>(res);
+    
+    RecordTime("VectorMagnitudeFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -398,6 +424,7 @@ VTKH3Slice::verify_params(const conduit::Node &params,
 void
 VTKH3Slice::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<DataObject>())
     {
@@ -492,6 +519,8 @@ VTKH3Slice::execute()
     DataObject *res =  new DataObject(new_coll);
     delete slice_output;
     set_output<DataObject>(res);
+    
+    RecordTime("ThreeSliceFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -546,7 +575,8 @@ VTKHTriangulate::verify_params(const conduit::Node &params,
 void
 VTKHTriangulate::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("VTKHTriangulate input must be a data object");
@@ -587,6 +617,8 @@ VTKHTriangulate::execute()
     DataObject *res =  new DataObject(new_coll);
     delete tri_output;
     set_output<DataObject>(res);
+    
+    RecordTime("TriangulateFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -641,6 +673,7 @@ VTKHCleanGrid::verify_params(const conduit::Node &params,
 void
 VTKHCleanGrid::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<DataObject>())
     {
@@ -684,6 +717,8 @@ VTKHCleanGrid::execute()
     DataObject *res =  new DataObject(new_coll);
     delete clean_output;
     set_output<DataObject>(res);
+    
+    RecordTime("CleanGridFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 
 }
 
@@ -779,7 +814,8 @@ VTKHSlice::verify_params(const conduit::Node &params,
 void
 VTKHSlice::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("VTKHSlice input must be a data object");
@@ -866,6 +902,7 @@ VTKHSlice::execute()
     delete slice_output;
     set_output<DataObject>(res);
 
+    RecordTime("SliceFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -921,7 +958,8 @@ VTKHGhostStripper::verify_params(const conduit::Node &params,
 void
 VTKHGhostStripper::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("VTKHGhostStripper input must be a data object");
@@ -979,6 +1017,8 @@ VTKHGhostStripper::execute()
     {
       set_output<DataObject>(data_object);
     }
+    
+    RecordTime("GhostStripperFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1035,7 +1075,8 @@ VTKHThreshold::verify_params(const conduit::Node &params,
 void
 VTKHThreshold::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("vtkh_threshold input must be a data object");
@@ -1089,6 +1130,8 @@ VTKHThreshold::execute()
     DataObject *res =  new DataObject(new_coll);
     delete thresh_output;
     set_output<DataObject>(res);
+    
+    RecordTime("ThresholdFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1521,6 +1564,7 @@ VTKHIsoVolume::verify_params(const conduit::Node &params,
 void
 VTKHIsoVolume::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
 
     if(!input(0).check_type<DataObject>())
     {
@@ -1572,6 +1616,8 @@ VTKHIsoVolume::execute()
     DataObject *res =  new DataObject(new_coll);
     delete clip_output;
     set_output<DataObject>(res);
+    
+    RecordTime("IsoVolumeFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 //-----------------------------------------------------------------------------
 
@@ -1636,6 +1682,8 @@ VTKHLagrangian::verify_params(const conduit::Node &params,
 void
 VTKHLagrangian::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("vtkh_lagrangian input must be a data object");
@@ -1693,6 +1741,8 @@ VTKHLagrangian::execute()
     DataObject *res =  new DataObject(new_coll);
     delete lagrangian_output;
     set_output<DataObject>(res);
+    
+    RecordTime("LagrangianFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
 }
 
 //-----------------------------------------------------------------------------
@@ -1858,6 +1908,8 @@ VTKHRecenter::verify_params(const conduit::Node &params,
 void
 VTKHRecenter::execute()
 {
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("vtkh_recenter input must be a data object");
@@ -1919,6 +1971,8 @@ VTKHRecenter::execute()
     DataObject *res =  new DataObject(new_coll);
     delete recenter_output;
     set_output<DataObject>(res);
+    
+    RecordTime("RecenterFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
 }
 //-----------------------------------------------------------------------------
 
@@ -2893,7 +2947,8 @@ VTKHNoOp::verify_params(const conduit::Node &params,
 void
 VTKHNoOp::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("vtkh_no_op input must be a data object");
@@ -2939,6 +2994,8 @@ VTKHNoOp::execute()
     DataObject *res =  new DataObject(new_coll);
     delete noop_output;
     set_output<DataObject>(res);
+    
+    RecordTime("NoOpFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
 }
 
 //-----------------------------------------------------------------------------
@@ -2995,7 +3052,8 @@ VTKHVectorComponent::verify_params(const conduit::Node &params,
 void
 VTKHVectorComponent::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("vtkh_vector_component input must be a data object");
@@ -3045,6 +3103,8 @@ VTKHVectorComponent::execute()
     DataObject *res =  new DataObject(new_coll);
     delete comp_output;
     set_output<DataObject>(res);
+    
+    RecordTime("VectorComponentFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
 }
 
 //-----------------------------------------------------------------------------
@@ -3103,7 +3163,8 @@ VTKHCompositeVector::verify_params(const conduit::Node &params,
 void
 VTKHCompositeVector::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("vtkh_composite_vector input must be a data object");
@@ -3183,6 +3244,8 @@ VTKHCompositeVector::execute()
     DataObject *res =  new DataObject(new_coll);
     delete comp_output;
     set_output<DataObject>(res);
+    
+    RecordTime("CompositeVectorFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
 }
 
 //-----------------------------------------------------------------------------
@@ -3314,6 +3377,7 @@ VTKHParticleAdvection::verify_params(const conduit::Node &params,
 {
     info.reset();
     bool res = check_string("field", params, info, true);
+    res &= check_numeric("seed_method", params, info, true, true);
     res &= check_numeric("num_seeds", params, info, true, true);
     res &= check_numeric("num_steps", params, info, true, true);
     res &= check_numeric("step_size", params, info, true, true);
@@ -3328,6 +3392,7 @@ VTKHParticleAdvection::verify_params(const conduit::Node &params,
 
     std::vector<std::string> valid_paths;
     valid_paths.push_back("field");
+    valid_paths.push_back("seed_method");
     valid_paths.push_back("num_seeds");
     valid_paths.push_back("num_steps");
     valid_paths.push_back("step_size");
@@ -3355,7 +3420,8 @@ VTKHParticleAdvection::verify_params(const conduit::Node &params,
 void
 VTKHParticleAdvection::execute()
 {
-
+    auto startT = std::chrono::steady_clock::now();
+    
     if(!input(0).check_type<DataObject>())
     {
         ASCENT_ERROR("vtkh_particle_advection input must be a data object");
@@ -3383,50 +3449,349 @@ VTKHParticleAdvection::execute()
 
     std::string topo_name = collection->field_topology(field_name);
     vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
     Node meta = Metadata::n_metadata;
     int cycle = meta["cycle"].to_int32();
     std::cout << "debug meta data 0:" << cycle << "," << field_name << "," << topo_name << std::endl;
 
-    int numSeeds = get_int32(params()["num_seeds"], data_object);
-    int numSteps = get_int32(params()["num_steps"], data_object);
-    float stepSize = get_float32(params()["step_size"], data_object);
-
-    float seedBBox[6];
-    seedBBox[0] = get_float32(params()["seed_bounding_box_xmin"], data_object);
-    seedBBox[1] = get_float32(params()["seed_bounding_box_xmax"], data_object);
-    seedBBox[2] = get_float32(params()["seed_bounding_box_ymin"], data_object);
-    seedBBox[3] = get_float32(params()["seed_bounding_box_ymax"], data_object);
-    seedBBox[4] = get_float32(params()["seed_bounding_box_zmin"], data_object);
-    seedBBox[5] = get_float32(params()["seed_bounding_box_zmax"], data_object);
-
-    float dx = seedBBox[1] - seedBBox[0];
-    float dy = seedBBox[3] - seedBBox[2];
-    float dz = seedBBox[5] - seedBBox[4];
-
-    if (dx < 0 || dy < 0 || dz < 0)
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::random_device device;
-    std::default_random_engine generator(0);
-    float  zero(0), one(1);
-    std::uniform_real_distribution<vtkm::FloatDefault> distribution(zero, one);
-    //Generate seeds
+    int rank = 0, numRanks = 0;
+#ifdef ASCENT_MPI_ENABLED
+    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+    MPI_Comm_rank(mpi_comm, &rank);
+    MPI_Comm_size(mpi_comm, &numRanks);
+#endif
 
     std::vector<vtkm::Particle> seeds;
-    for (int i = 0; i < numSeeds; i++)
+    std::string seedType = params()["seed_method"].as_string();
+    if(seedType == "cell")
     {
-      float x = seedBBox[0] + dx * distribution(generator);
-      float y = seedBBox[2] + dy * distribution(generator);
-      float z = seedBBox[4] + dz * distribution(generator);
-      seeds.push_back(vtkm::Particle({x,y,z}, i));
+#ifdef ASCENT_MPI_ENABLED
+        using AxisArrayType = vtkm::cont::ArrayHandle<vtkm::FloatDefault>;
+        using CartesianProduct = vtkm::cont::ArrayHandleCartesianProduct<AxisArrayType, AxisArrayType, AxisArrayType>;
+
+        int particleCount = 0;
+        vtkm::Id numDomains = data.GetNumberOfDomains();
+        for (vtkm::Id i = 0; i < numDomains; i++)
+        {
+            auto tempDS = data.GetDomain(i);
+            vtkm::cont::CellSetStructured<3> tempCS =
+                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<CartesianProduct>();
+
+            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+            vtkm::cont::Invoker invoke;
+            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
+
+            auto buff = cellCenters.ReadPortal();
+
+            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
+            {
+                vtkm::Particle p;
+                p.Pos = buff.Get(z);
+                p.ID = static_cast<vtkm::Id>(particleCount);
+                seeds.push_back(p);
+                particleCount++;
+            }
+        }
+
+        //Make the paricle ID's unique
+        std::vector<int> particlesPerRank(numRanks, 0);
+        particlesPerRank[rank] = particleCount;
+        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+        int offset = 0;
+        for (int i = 0; i < rank; i++)
+          offset += particlesPerRank[i];
+
+        if (offset > 0)
+        {
+          for (auto& p : seeds)
+            p.ID += offset;
+        }
+        
+        if(0)
+        {
+            ofstream *seedFile = new ofstream;
+            char nm[64];
+            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
+            seedFile->open(nm, ofstream::out);
+
+
+            (*seedFile) << "x " << "y " << "z " << "value" << endl;
+
+            for(long unsigned int i = 0; i < seeds.size(); i++)
+            {
+               (*seedFile) << seeds[i].Pos[0] << " "
+                        << seeds[i].Pos[1] << " "
+                        << seeds[i].Pos[2] << " "
+                        << "0" << endl;
+            }
+
+            seedFile->close();
+        }
+#endif
     }
-    auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
+    else if(seedType == "domain")
+    {
+#ifdef ASCENT_MPI_ENABLED
+        using AxisArrayType = vtkm::cont::ArrayHandle<vtkm::FloatDefault>;
+        using CartesianProduct = vtkm::cont::ArrayHandleCartesianProduct<AxisArrayType, AxisArrayType, AxisArrayType>;
+
+        int particleCount = 0;
+        vtkm::Id numDomains = data.GetNumberOfDomains();
+        for (vtkm::Id i = 0; i < numDomains; i++)
+        {
+            auto tempDS = data.GetDomain(i);
+            vtkm::cont::CellSetStructured<3> tempCS =
+                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<CartesianProduct>();
+
+            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+            vtkm::cont::Invoker invoke;
+            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
+            auto buff = cellCenters.ReadPortal();
+
+            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
+            {
+                vtkm::Particle p;
+                p.Pos = buff.Get(z);
+                p.ID = static_cast<vtkm::Id>(particleCount);
+                seeds.push_back(p);
+                particleCount++;
+                break;
+            }
+        }
+
+        //Make the paricle ID's unique
+        std::vector<int> particlesPerRank(numRanks, 0);
+        particlesPerRank[rank] = particleCount;
+        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+        int offset = 0;
+        for (int i = 0; i < rank; i++)
+          offset += particlesPerRank[i];
+
+        if (offset > 0)
+        {
+          for (auto& p : seeds)
+            p.ID += offset;
+        }
+
+        if(0)
+        {
+            ofstream *seedFile = new ofstream;
+            char nm[64];
+            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
+            seedFile->open(nm, ofstream::out);
+
+
+            (*seedFile) << "x " << "y " << "z " << "value" << endl;
+
+            for(long unsigned int i = 0; i < seeds.size(); i++)
+            {
+               (*seedFile) << seeds[i].Pos[0] << " "
+                        << seeds[i].Pos[1] << " "
+                        << seeds[i].Pos[2] << " "
+                        << "0" << endl;
+            }
+
+            seedFile->close();
+        }
+#endif
+    }
+        if(seedType == "amrCell")
+    {
+#ifdef ASCENT_MPI_ENABLED
+        using UniformCoordType = vtkm::cont::ArrayHandleUniformPointCoordinates;
+
+        int particleCount = 0;
+        vtkm::Id numDomains = data.GetNumberOfDomains();
+        for (vtkm::Id i = 0; i < numDomains; i++)
+        {
+            auto tempDS = data.GetDomain(i);
+            vtkm::cont::CellSetStructured<3> tempCS =
+                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<UniformCoordType>();
+
+            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+            vtkm::cont::Invoker invoke;
+            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
+
+            auto tempGhosts = tempDS.GetField("topo_ghosts");
+            auto ghostArr = tempGhosts.GetData().AsArrayHandle<vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
+            const vtkm::FloatDefault* ghostBuff = ghostArr.GetReadPointer();
+            auto buff = cellCenters.ReadPortal();
+
+            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
+            {
+                if(ghostBuff[z] == 0)
+                {
+                    vtkm::Particle p;
+                    p.Pos = buff.Get(z);
+                    p.ID = static_cast<vtkm::Id>(particleCount);
+                    seeds.push_back(p);
+                    particleCount++;
+                }
+            }
+        }
+
+        //Make the paricle ID's unique
+        std::vector<int> particlesPerRank(numRanks, 0);
+        particlesPerRank[rank] = particleCount;
+        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+        int offset = 0;
+        for (int i = 0; i < rank; i++)
+          offset += particlesPerRank[i];
+
+        if (offset > 0)
+        {
+          for (auto& p : seeds)
+            p.ID += offset;
+        }
+        
+        if(0)
+        {
+            ofstream *seedFile = new ofstream;
+            char nm[64];
+            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
+            seedFile->open(nm, ofstream::out);
+
+
+            (*seedFile) << "x " << "y " << "z " << "value" << endl;
+
+            for(long unsigned int i = 0; i < seeds.size(); i++)
+            {
+               (*seedFile) << seeds[i].Pos[0] << " "
+                        << seeds[i].Pos[1] << " "
+                        << seeds[i].Pos[2] << " "
+                        << "0" << endl;
+            }
+
+            seedFile->close();
+        }
+#endif
+    }
+    else if(seedType == "amrDomain")
+    {
+#ifdef ASCENT_MPI_ENABLED
+        using UniformCoordType = vtkm::cont::ArrayHandleUniformPointCoordinates;
+
+        int particleCount = 0;
+        vtkm::Id numDomains = data.GetNumberOfDomains();
+        for (vtkm::Id i = 0; i < numDomains; i++)
+        {
+            auto tempDS = data.GetDomain(i);
+            vtkm::cont::CellSetStructured<3> tempCS =
+                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<UniformCoordType>();
+
+            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+            vtkm::cont::Invoker invoke;
+            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
+
+            auto tempGhosts = tempDS.GetField("topo_ghosts");
+            auto ghostArr = tempGhosts.GetData().AsArrayHandle<vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
+            const vtkm::FloatDefault* ghostBuff = ghostArr.GetReadPointer();
+            auto buff = cellCenters.ReadPortal();
+
+            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
+            {
+                if(ghostBuff[z] == 0)
+                {
+                    vtkm::Particle p;
+                    p.Pos = buff.Get(z);
+                    p.ID = static_cast<vtkm::Id>(particleCount);
+                    seeds.push_back(p);
+                    particleCount++;
+                    break;
+                }
+            }
+        }
+
+        //Make the paricle ID's unique
+        std::vector<int> particlesPerRank(numRanks, 0);
+        particlesPerRank[rank] = particleCount;
+        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+        int offset = 0;
+        for (int i = 0; i < rank; i++)
+          offset += particlesPerRank[i];
+
+        if (offset > 0)
+        {
+          for (auto& p : seeds)
+            p.ID += offset;
+        }
+
+        if(0)
+        {
+            ofstream *seedFile = new ofstream;
+            char nm[64];
+            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
+            seedFile->open(nm, ofstream::out);
+
+
+            (*seedFile) << "x " << "y " << "z " << "value" << endl;
+
+            for(long unsigned int i = 0; i < seeds.size(); i++)
+            {
+               (*seedFile) << seeds[i].Pos[0] << " "
+                        << seeds[i].Pos[1] << " "
+                        << seeds[i].Pos[2] << " "
+                        << "0" << endl;
+            }
+
+            seedFile->close();
+        }
+#endif
+    }
+    else if(seedType == "box")
+    {
+        float seedBBox[6];
+        seedBBox[0] = get_float32(params()["seed_bounding_box_xmin"], data_object);
+        seedBBox[1] = get_float32(params()["seed_bounding_box_xmax"], data_object);
+        seedBBox[2] = get_float32(params()["seed_bounding_box_ymin"], data_object);
+        seedBBox[3] = get_float32(params()["seed_bounding_box_ymax"], data_object);
+        seedBBox[4] = get_float32(params()["seed_bounding_box_zmin"], data_object);
+        seedBBox[5] = get_float32(params()["seed_bounding_box_zmax"], data_object);
+
+        float dx = seedBBox[1] - seedBBox[0];
+        float dy = seedBBox[3] - seedBBox[2];
+        float dz = seedBBox[5] - seedBBox[4];
+
+        if (dx < 0 || dy < 0 || dz < 0)
+        {
+          bool throw_error = false;
+          detail::field_error(field_name, this->name(), collection, throw_error);
+          // this creates a data object with an invalid soource
+          set_output<DataObject>(new DataObject());
+          return;
+        }
+
+        std::random_device device;
+        std::default_random_engine generator(0);
+        float  zero(0), one(1);
+        std::uniform_real_distribution<vtkm::FloatDefault> distribution(zero, one);
+        //Generate seeds
+
+        int numSeeds = get_int32(params()["num_seeds"], data_object);
+        for (int i = 0; i < numSeeds; i++)
+        {
+          float x = seedBBox[0] + dx * distribution(generator);
+          float y = seedBBox[2] + dy * distribution(generator);
+          float z = seedBBox[4] + dz * distribution(generator);
+          seeds.push_back(vtkm::Particle({x,y,z}, i));
+        }
+        auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
+    }
+    
+    int numSteps = get_int32(params()["num_steps"], data_object);
+    float stepSize = get_float32(params()["step_size"], data_object);
 
     //rename ghost cells
     vtkm::Id numDS = data.GetNumberOfDomains();
@@ -3451,9 +3816,6 @@ VTKHParticleAdvection::execute()
           }
       }
     }
-
-
-data.PrintSummary(cerr);
 
     vtkh::DataSet *output = nullptr;
     if (params()["record_trajectories"].as_string().compare("true") == 0)
@@ -3485,19 +3847,12 @@ data.PrintSummary(cerr);
 
     if(params()["write_streamlines"].as_string().compare("true") == 0)
     {
-       int rank = 0;
-#ifdef ASCENT_MPI_ENABLED
-      MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-      MPI_Comm_rank(mpi_comm, &rank);
-#endif
-
       int numDomains = output->GetNumberOfDomains();
       std::cerr << "num domains " << numDomains << std::endl;
       for(int i = 0; i < numDomains; i++)
       {
         char fileNm[128];
-        std::cout << "debug data meta info " << cycle << "," <<  rank << "," << i << std::endl;
-        sprintf(fileNm, "ascentStreamlines.step%d.rank%d.domain%d.vtk", cycle, rank, i);
+        sprintf(fileNm, "ascentStreamlines.step%lld.rank%d.domain%d.vtk", data.GetCycle(), rank, i);
         vtkm::io::VTKDataSetWriter write(fileNm);
         write.WriteDataSet(output->GetDomain(i));
       }
@@ -3511,6 +3866,8 @@ data.PrintSummary(cerr);
     DataObject *res =  new DataObject(new_coll);
     delete output;
     set_output<DataObject>(res);
+    
+    RecordTime("ParticleAdvectionFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
 }
 
 //-----------------------------------------------------------------------------

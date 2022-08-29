@@ -17,6 +17,42 @@
 #include <ascent.hpp>
 
 #include <flow_filter.hpp>
+#include <vtkm/filter/CleanGrid.h>
+#include <vtkm/VectorAnalysis.h>
+#include <vtkm/cont/ArrayHandleSOA.h>
+#include <vtkm/cont/ArrayHandleCartesianProduct.h>
+#include <vtkm/cont/ArrayHandleUniformPointCoordinates.h>
+#include <vtkm/cont/ArrayPortalToIterators.h>
+#include <vtkm/cont/CellSetStructured.h>
+#include <vtkm/cont/DataSetBuilderExplicit.h>
+#include <vtkm/cont/DataSetBuilderRectilinear.h>
+#include <vtkm/cont/DataSetBuilderUniform.h>
+#include <vtkm/io/VTKDataSetWriter.h>
+#include <vtkm/exec/ParametricCoordinates.h>
+#include <vtkm/exec/CellInterpolate.h>
+
+
+namespace vtkm
+{
+namespace worklet
+{
+struct CellCenter: public vtkm::worklet::WorkletVisitCellsWithPoints
+{
+    public:
+    using ControlSignature = void (CellSetIn cellSet, FieldInPoint inputPointField, FieldOut outputCellField);
+    using ExecutionSignature = void (_1, PointCount, _2, _3);
+    using InputDomain = _1;
+    template <typename CellShape, typename InputPointFieldType, typename OutputType>
+    VTKM_EXEC void operator()(CellShape shape, vtkm::IdComponent numPoints,
+    const InputPointFieldType &inputPointField, OutputType &centerOut) const
+    {
+        vtkm::Vec3f parametricCenter;
+        vtkm::exec::ParametricCoordinatesCenter(numPoints, shape, parametricCenter);
+        vtkm::exec::CellInterpolate(inputPointField, parametricCenter, shape, centerOut);
+    }
+};
+}
+}
 
 
 //-----------------------------------------------------------------------------

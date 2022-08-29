@@ -44,8 +44,8 @@ namespace filters
 {
 
 static std::ofstream *timingInfo = NULL;    
-void RecordTime(const std::string &nm, double time);
-
+void RecordTime(const std::string &nm, int step, double time);
+int GetCycle();
 namespace detail
 {
 

@@ -1674,12 +1674,12 @@ AscentRuntime::Execute(const conduit::Node &actions)
         }
 #endif
         // now execute the data flow graph
-        auto start = high_resolution_clock::now();
+        auto startT = std::chrono::steady_clock::now();
         w.execute();
-        auto stop = high_resolution_clock::now();
+        auto stopT = std::chrono::steady_clock::now();
         int cycle = Metadata::n_metadata["cycle"].to_int32();
-        auto duration_micro = duration_cast<microseconds> (stop - start);
-        std::cout <<" INFO rank "<< m_rank<< " cycle " << cycle << " ascent_execution_time "<<duration_micro.count()*0.000001<<std::endl;
+        auto duration_milli = duration<double, std::milli>(stopT - startT);
+        std::cout <<" INFO rank "<< m_rank<< " cycle " << cycle << " ascent_execution_time "<<duration_milli.count()*0.001<<std::endl;
 
 #if defined(ASCENT_VTKM_ENABLED)
         if(log_timings)

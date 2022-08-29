@@ -1242,7 +1242,7 @@ DefaultRender::execute()
     }
     set_output<std::vector<vtkh::Render>>(renders);
     
-    RecordTime("DefaultRender", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
+    RecordTime("DefaultRender", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());    
 }
 
 //-----------------------------------------------------------------------------
@@ -1292,7 +1292,7 @@ VTKHBounds::execute()
 
     set_output<vtkm::Bounds>(bounds);
     
-    RecordTime("Bounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("Bounds", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -1345,7 +1345,7 @@ VTKHUnionBounds::execute()
     result->Include(*bounds_b);
     set_output<vtkm::Bounds>(result);
     
-    RecordTime("UnionBounds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("UnionBounds", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1399,7 +1399,7 @@ AddPlot::execute()
     }
     set_output<detail::AscentScene>(scene);
     
-    RecordTime("AddPlot", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("AddPlot", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1682,7 +1682,7 @@ CreatePlot::execute()
 
     set_output<detail::RendererContainer>(container);
 
-    RecordTime("CreatePlot", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("CreatePlot", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 
@@ -1713,7 +1713,7 @@ CreateScene::execute()
     detail::AscentScene *scene = new detail::AscentScene(&graph().workspace().registry());
     set_output<detail::AscentScene>(scene);
     
-    RecordTime("CreateScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("CreateScene", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1796,7 +1796,7 @@ ExecScene::execute()
       image_list->append() = image_data;
     }
 
-    RecordTime("ExecScene", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("ExecScene", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 //-----------------------------------------------------------------------------
 

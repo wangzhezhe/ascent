@@ -107,7 +107,7 @@ namespace runtime
 namespace filters
 {
 
-void RecordTime(const std::string &nm, double time)
+void RecordTime(const std::string &nm, int step, double time)
 {
     int rank = 0, numRanks = 0;
 #ifdef ASCENT_MPI_ENABLED
@@ -123,10 +123,15 @@ void RecordTime(const std::string &nm, double time)
         sprintf(nm, "timing.%d.out", rank);
         timingInfo->open(nm, std::ofstream::out);
     }
-    (*timingInfo)<<"ASCENT_"<<nm<<"_"<<rank<<"_"<<numRanks<<" "<<time<<std::endl;
+    (*timingInfo)<<step<<"_"<<"ASCENT_"<<nm<<"_"<<rank<<"_"<<numRanks<<" "<<time<<std::endl;
     //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
 }
 
+int GetCycle(){
+    Node meta = Metadata::n_metadata;
+    int cycle = meta["cycle"].to_int32();
+    return cycle;
+}
 
 VTKHMarchingCubes::VTKHMarchingCubes()
 :Filter()
@@ -258,7 +263,7 @@ VTKHMarchingCubes::execute()
     delete iso_output;
     set_output<DataObject>(res);
     
-    RecordTime("ContourFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("ContourFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -365,7 +370,7 @@ VTKHVectorMagnitude::execute()
     delete mag_output;
     set_output<DataObject>(res);
     
-    RecordTime("VectorMagnitudeFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("VectorMagnitudeFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -520,7 +525,7 @@ VTKH3Slice::execute()
     delete slice_output;
     set_output<DataObject>(res);
     
-    RecordTime("ThreeSliceFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("ThreeSliceFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -618,7 +623,7 @@ VTKHTriangulate::execute()
     delete tri_output;
     set_output<DataObject>(res);
     
-    RecordTime("TriangulateFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("TriangulateFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -718,7 +723,7 @@ VTKHCleanGrid::execute()
     delete clean_output;
     set_output<DataObject>(res);
     
-    RecordTime("CleanGridFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("CleanGridFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 
 }
 
@@ -902,7 +907,7 @@ VTKHSlice::execute()
     delete slice_output;
     set_output<DataObject>(res);
 
-    RecordTime("SliceFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("SliceFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1018,7 +1023,7 @@ VTKHGhostStripper::execute()
       set_output<DataObject>(data_object);
     }
     
-    RecordTime("GhostStripperFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("GhostStripperFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1131,7 +1136,7 @@ VTKHThreshold::execute()
     delete thresh_output;
     set_output<DataObject>(res);
     
-    RecordTime("ThresholdFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("ThresholdFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 
 //-----------------------------------------------------------------------------
@@ -1617,7 +1622,7 @@ VTKHIsoVolume::execute()
     delete clip_output;
     set_output<DataObject>(res);
     
-    RecordTime("IsoVolumeFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+    RecordTime("IsoVolumeFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
 }
 //-----------------------------------------------------------------------------
 
@@ -1742,7 +1747,7 @@ VTKHLagrangian::execute()
     delete lagrangian_output;
     set_output<DataObject>(res);
     
-    RecordTime("LagrangianFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
+    RecordTime("LagrangianFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
 }
 
 //-----------------------------------------------------------------------------
@@ -1972,7 +1977,7 @@ VTKHRecenter::execute()
     delete recenter_output;
     set_output<DataObject>(res);
     
-    RecordTime("RecenterFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
+    RecordTime("RecenterFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
 }
 //-----------------------------------------------------------------------------
 
@@ -2995,7 +3000,7 @@ VTKHNoOp::execute()
     delete noop_output;
     set_output<DataObject>(res);
     
-    RecordTime("NoOpFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
+    RecordTime("NoOpFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
 }
 
 //-----------------------------------------------------------------------------
@@ -3104,7 +3109,7 @@ VTKHVectorComponent::execute()
     delete comp_output;
     set_output<DataObject>(res);
     
-    RecordTime("VectorComponentFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
+    RecordTime("VectorComponentFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
 }
 
 //-----------------------------------------------------------------------------
@@ -3245,7 +3250,7 @@ VTKHCompositeVector::execute()
     delete comp_output;
     set_output<DataObject>(res);
     
-    RecordTime("CompositeVectorFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
+    RecordTime("CompositeVectorFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
 }
 
 //-----------------------------------------------------------------------------
@@ -3867,7 +3872,7 @@ VTKHParticleAdvection::execute()
     delete output;
     set_output<DataObject>(res);
     
-    RecordTime("ParticleAdvectionFilter", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
+    RecordTime("ParticleAdvectionFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
 }
 
 //-----------------------------------------------------------------------------

@@ -4,7 +4,6 @@
 // other details. No copyright assignment is required to contribute to Ascent.
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-
 //-----------------------------------------------------------------------------
 ///
 /// file: ascent_runtime_vtkh_filters.cpp
@@ -19,20 +18,20 @@
 
 // conduit includes
 #include <conduit.hpp>
-#include <conduit_relay.hpp>
 #include <conduit_blueprint.hpp>
+#include <conduit_relay.hpp>
 
 //-----------------------------------------------------------------------------
 // ascent includes
 //-----------------------------------------------------------------------------
+#include <ascent_data_object.hpp>
 #include <ascent_logging.hpp>
 #include <ascent_metadata.hpp>
-#include <ascent_string_utils.hpp>
 #include <ascent_runtime_param_check.hpp>
 #include <ascent_runtime_utils.hpp>
+#include <ascent_string_utils.hpp>
 #include <flow_graph.hpp>
 #include <flow_workspace.hpp>
-#include <ascent_data_object.hpp>
 
 // mpi
 #ifdef ASCENT_MPI_ENABLED
@@ -40,49 +39,49 @@
 #endif
 
 #if defined(ASCENT_VTKM_ENABLED)
-#include <vtkh/vtkh.hpp>
 #include <vtkh/DataSet.hpp>
-#include <vtkh/rendering/RayTracer.hpp>
-#include <vtkh/rendering/Scene.hpp>
-#include <vtkh/rendering/MeshRenderer.hpp>
-#include <vtkh/rendering/PointRenderer.hpp>
-#include <vtkh/rendering/VolumeRenderer.hpp>
-#include <vtkh/rendering/ScalarRenderer.hpp>
+#include <vtkh/filters/CleanGrid.hpp>
 #include <vtkh/filters/Clip.hpp>
 #include <vtkh/filters/ClipField.hpp>
-#include <vtkh/filters/CleanGrid.hpp>
 #include <vtkh/filters/CompositeVector.hpp>
-#include <vtkh/filters/Gradient.hpp>
 #include <vtkh/filters/GhostStripper.hpp>
+#include <vtkh/filters/Gradient.hpp>
+#include <vtkh/filters/HistSampling.hpp>
+#include <vtkh/filters/Histogram.hpp>
 #include <vtkh/filters/IsoVolume.hpp>
-#include <vtkh/filters/MarchingCubes.hpp>
-#include <vtkh/filters/NoOp.hpp>
 #include <vtkh/filters/Lagrangian.hpp>
 #include <vtkh/filters/Log.hpp>
+#include <vtkh/filters/MarchingCubes.hpp>
+#include <vtkh/filters/NoOp.hpp>
 #include <vtkh/filters/ParticleAdvection.hpp>
+#include <vtkh/filters/PointTransform.hpp>
 #include <vtkh/filters/Recenter.hpp>
 #include <vtkh/filters/Slice.hpp>
 #include <vtkh/filters/Statistics.hpp>
 #include <vtkh/filters/Streamline.hpp>
 #include <vtkh/filters/Threshold.hpp>
 #include <vtkh/filters/Triangulate.hpp>
-#include <vtkh/filters/VectorMagnitude.hpp>
 #include <vtkh/filters/VectorComponent.hpp>
-#include <vtkh/filters/Histogram.hpp>
-#include <vtkh/filters/HistSampling.hpp>
-#include <vtkh/filters/PointTransform.hpp>
+#include <vtkh/filters/VectorMagnitude.hpp>
+#include <vtkh/rendering/MeshRenderer.hpp>
+#include <vtkh/rendering/PointRenderer.hpp>
+#include <vtkh/rendering/RayTracer.hpp>
+#include <vtkh/rendering/ScalarRenderer.hpp>
+#include <vtkh/rendering/Scene.hpp>
+#include <vtkh/rendering/VolumeRenderer.hpp>
+#include <vtkh/vtkh.hpp>
 #include <vtkm/cont/DataSet.h>
 #include <vtkm/io/VTKDataSetWriter.h>
 
-#include <ascent_vtkh_data_adapter.hpp>
+#include <ascent_expression_eval.hpp>
 #include <ascent_runtime_conduit_to_vtkm_parsing.hpp>
 #include <ascent_runtime_vtkh_utils.hpp>
-#include <ascent_expression_eval.hpp>
+#include <ascent_vtkh_data_adapter.hpp>
 
 #endif
 
-#include <stdio.h>
 #include <random>
+#include <stdio.h>
 
 using namespace conduit;
 using namespace std;
@@ -92,3828 +91,3403 @@ using namespace flow;
 //-----------------------------------------------------------------------------
 // -- begin ascent:: --
 //-----------------------------------------------------------------------------
-namespace ascent
-{
+namespace ascent {
 
 //-----------------------------------------------------------------------------
 // -- begin ascent::runtime --
 //-----------------------------------------------------------------------------
-namespace runtime
-{
+namespace runtime {
 
 //-----------------------------------------------------------------------------
 // -- begin ascent::runtime::filters --
 //-----------------------------------------------------------------------------
-namespace filters
-{
+namespace filters {
 
-void RecordTime(const std::string &nm, int step, double time)
-{
-    int rank = 0, numRanks = 0;
+std::mutex vtkhCounterMapMutex;
+std::unordered_map<std::string, uint> vtkhcounterMap;
+
+void RecordTime(const std::string &nm, int step, double time) {
+  int rank = 0, numRanks = 0;
 #ifdef ASCENT_MPI_ENABLED
-    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-    MPI_Comm_rank(mpi_comm, &rank);
-    MPI_Comm_size(mpi_comm, &numRanks);
+  MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+  MPI_Comm_rank(mpi_comm, &rank);
+  MPI_Comm_size(mpi_comm, &numRanks);
 #endif
-    
-    if (timingInfo == NULL)
-    {
-        timingInfo = new std::ofstream;
-        char nm[32];
-        sprintf(nm, "timing.%d.out", rank);
-        timingInfo->open(nm, std::ofstream::out);
-    }
-    (*timingInfo)<<step<<"_"<<"ASCENT_"<<nm<<"_"<<rank<<"_"<<numRanks<<" "<<time<<std::endl;
-    //cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
+
+  if (timingInfo == NULL) {
+    timingInfo = new std::ofstream;
+    char nm[32];
+    sprintf(nm, "timing.%d.out", rank);
+    timingInfo->open(nm, std::ofstream::out);
+  }
+  (*timingInfo) << step << "_"
+                << "ASCENT_" << nm << "_" << rank << "_" << numRanks << " "
+                << time << std::endl;
+  // cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
 }
 
-int GetCycle(){
-    Node meta = Metadata::n_metadata;
-    int cycle = meta["cycle"].to_int32();
-    return cycle;
+int GetCycle() {
+  Node meta = Metadata::n_metadata;
+  int cycle = meta["cycle"].to_int32();
+  return cycle;
 }
 
-VTKHMarchingCubes::VTKHMarchingCubes()
-:Filter()
-{
-// empty
+void IncCounter(const std::string &nm) {
+  std::lock_guard<std::mutex> guard(vtkhCounterMapMutex);
+  vtkhcounterMap[nm]++;
+}
+// this is implemented in vtkm
+void RecordCounter(const std::string &nm, int step) {
+
+  int rank = 0, numRanks = 0;
+#ifdef ASCENT_MPI_ENABLED
+  MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+  MPI_Comm_rank(mpi_comm, &rank);
+  MPI_Comm_size(mpi_comm, &numRanks);
+#endif
+
+  if (counterInfo == NULL) {
+    counterInfo = new std::ofstream;
+    char temp[32];
+    sprintf(temp, "vtkhcounter.%d.out", rank);
+    counterInfo->open(temp, std::ofstream::out);
+  }
+  std::lock_guard<std::mutex> guard(vtkhCounterMapMutex);
+  {
+    int countValue = vtkhcounterMap[nm];
+    (*counterInfo) << step << "_"
+                   << "COUNTER_" << nm << "_" << rank << "_" << numRanks << " "
+                   << countValue << std::endl;
+  }
+  // cout<<nm<<" rank "<<rank<<" time "<<time<<endl;
+}
+
+void RecordSeeds(const std::string &method, std::vector<vtkm::Particle> &seeds,
+                 int rank) {
+  ofstream *seedFile = new ofstream;
+  char nm[64];
+  sprintf(nm, ("seeds_" + method + "_step%d_rank%d.xyz").c_str(), GetCycle(),
+          rank);
+  seedFile->open(nm, ofstream::out);
+  // use the XYZ reader can parse this info
+  (*seedFile) << seeds.size() << endl;
+  (*seedFile) << "index,"
+              << "x,"
+              << "y,"
+              << "z" << endl;
+
+  for (long unsigned int i = 0; i < seeds.size(); i++) {
+    (*seedFile) << "i"
+                << " " << seeds[i].Pos[0] << " " << seeds[i].Pos[1] << " "
+                << seeds[i].Pos[2] << endl;
+  }
+
+  seedFile->close();
+}
+
+VTKHMarchingCubes::VTKHMarchingCubes() : Filter() {
+  // empty
 }
 
 //-----------------------------------------------------------------------------
-VTKHMarchingCubes::~VTKHMarchingCubes()
-{
-// empty
+VTKHMarchingCubes::~VTKHMarchingCubes() {
+  // empty
 }
 
 //-----------------------------------------------------------------------------
-void
-VTKHMarchingCubes::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_marchingcubes";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
+void VTKHMarchingCubes::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_marchingcubes";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
 }
 
 //-----------------------------------------------------------------------------
-bool
-VTKHMarchingCubes::verify_params(const conduit::Node &params,
-                                 conduit::Node &info)
-{
-    info.reset();
+bool VTKHMarchingCubes::verify_params(const conduit::Node &params,
+                                      conduit::Node &info) {
+  info.reset();
 
-    bool res = check_string("field",params, info, true);
-    bool has_values = check_numeric("iso_values",params, info, false);
-    bool has_levels = check_numeric("levels",params, info, false);
+  bool res = check_string("field", params, info, true);
+  bool has_values = check_numeric("iso_values", params, info, false);
+  bool has_levels = check_numeric("levels", params, info, false);
 
-    if(!has_values && !has_levels)
-    {
-        info["errors"].append() = "Missing required numeric parameter. Contour must"
-                                  " specify 'iso_values' or 'levels'.";
-        res = false;
-    }
+  if (!has_values && !has_levels) {
+    info["errors"].append() = "Missing required numeric parameter. Contour must"
+                              " specify 'iso_values' or 'levels'.";
+    res = false;
+  }
 
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("levels");
-    valid_paths.push_back("iso_values");
-    valid_paths.push_back("use_contour_tree");
-    std::string surprises = surprise_check(valid_paths, params);
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("levels");
+  valid_paths.push_back("iso_values");
+  valid_paths.push_back("use_contour_tree");
+  std::string surprises = surprise_check(valid_paths, params);
 
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
 
-    return res;
+  return res;
 }
 
 //-----------------------------------------------------------------------------
-void
-VTKHMarchingCubes::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
+void VTKHMarchingCubes::execute() {
+  auto startT = std::chrono::steady_clock::now();
 
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_vector_magnitude input must be a data object");
-    }
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_vector_magnitude input must be a data object");
+  }
 
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
 
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
 
-    std::string field_name = params()["field"].as_string();
+  std::string field_name = params()["field"].as_string();
 
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
 
-    std::string topo_name = collection->field_topology(field_name);
+  std::string topo_name = collection->field_topology(field_name);
 
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-    vtkh::MarchingCubes marcher;
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+  vtkh::MarchingCubes marcher;
 
-    marcher.SetInput(&data);
-    marcher.SetField(field_name);
+  marcher.SetInput(&data);
+  marcher.SetField(field_name);
 
-    if(params().has_path("iso_values"))
-    {
-      const Node &n_iso_vals = params()["iso_values"];
+  if (params().has_path("iso_values")) {
+    const Node &n_iso_vals = params()["iso_values"];
 
-      // convert to contig doubles
-      Node n_iso_vals_dbls;
-      n_iso_vals.to_float64_array(n_iso_vals_dbls);
+    // convert to contig doubles
+    Node n_iso_vals_dbls;
+    n_iso_vals.to_float64_array(n_iso_vals_dbls);
 
-      marcher.SetIsoValues(n_iso_vals_dbls.as_double_ptr(),
-                           n_iso_vals_dbls.dtype().number_of_elements());
-    }
-    else
-    {
-      marcher.SetLevels(params()["levels"].to_int32());
-      if(params().has_path("use_contour_tree"))
-      {
-        std::string use = params()["use_contour_tree"].as_string();
-        if(use == "true")
-        {
-          marcher.SetUseContourTree(true);
-        }
+    marcher.SetIsoValues(n_iso_vals_dbls.as_double_ptr(),
+                         n_iso_vals_dbls.dtype().number_of_elements());
+  } else {
+    marcher.SetLevels(params()["levels"].to_int32());
+    if (params().has_path("use_contour_tree")) {
+      std::string use = params()["use_contour_tree"].as_string();
+      if (use == "true") {
+        marcher.SetUseContourTree(true);
       }
     }
+  }
 
-    marcher.Update();
+  marcher.Update();
 
-    vtkh::DataSet *iso_output = marcher.GetOutput();
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*iso_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete iso_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("ContourFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+  vtkh::DataSet *iso_output = marcher.GetOutput();
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*iso_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete iso_output;
+  set_output<DataObject>(res);
+
+  RecordTime("ContourFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
 }
 
 //-----------------------------------------------------------------------------
-VTKHVectorMagnitude::VTKHVectorMagnitude()
-:Filter()
-{
-// empty
+VTKHVectorMagnitude::VTKHVectorMagnitude() : Filter() {
+  // empty
 }
 
 //-----------------------------------------------------------------------------
-VTKHVectorMagnitude::~VTKHVectorMagnitude()
-{
-// empty
+VTKHVectorMagnitude::~VTKHVectorMagnitude() {
+  // empty
 }
 
 //-----------------------------------------------------------------------------
-void
-VTKHVectorMagnitude::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_vector_magnitude";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
+void VTKHVectorMagnitude::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_vector_magnitude";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
 }
 
 //-----------------------------------------------------------------------------
-bool
-VTKHVectorMagnitude::verify_params(const conduit::Node &params,
-                                 conduit::Node &info)
-{
-    info.reset();
+bool VTKHVectorMagnitude::verify_params(const conduit::Node &params,
+                                        conduit::Node &info) {
+  info.reset();
 
-    bool res = check_string("field",params, info, true);
-    res = check_string("output_name",params, info, false) && res;
+  bool res = check_string("field", params, info, true);
+  res = check_string("output_name", params, info, false) && res;
 
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("output_name");
-    std::string surprises = surprise_check(valid_paths, params);
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("output_name");
+  std::string surprises = surprise_check(valid_paths, params);
 
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
 
-    return res;
+  return res;
 }
 
 //-----------------------------------------------------------------------------
-void
-VTKHVectorMagnitude::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
+void VTKHVectorMagnitude::execute() {
+  auto startT = std::chrono::steady_clock::now();
 
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_vector_magnitude input must be a data object");
-    }
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_vector_magnitude input must be a data object");
+  }
 
-    DataObject *data_object = input<DataObject>(0);
+  DataObject *data_object = input<DataObject>(0);
 
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
 
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
 
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::VectorMagnitude mag;
-
-    mag.SetInput(&data);
-    mag.SetField(field_name);
-    if(params().has_path("output_name"))
-    {
-      std::string output_name = params()["output_name"].as_string();
-      mag.SetResultName(output_name);
-    }
-
-    mag.Update();
-
-    vtkh::DataSet *mag_output = mag.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*mag_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete mag_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("VectorMagnitudeFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-}
-
-//-----------------------------------------------------------------------------
-VTKH3Slice::VTKH3Slice()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKH3Slice::~VTKH3Slice()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKH3Slice::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_3slice";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKH3Slice::verify_params(const conduit::Node &params,
-                         conduit::Node &info)
-{
-    info.reset();
-    bool res = true;
-    std::vector<std::string> valid_paths;
-    res &= check_string("topology",params, info, false);
-    valid_paths.push_back("topology");
-
-    res &= check_numeric("x_offset",params, info, false, true);
-    res &= check_numeric("y_offset",params, info, false, true);
-    res &= check_numeric("z_offset",params, info, false, true);
-    res = check_string("topology",params, info, false) && res;
-
-    valid_paths.push_back("x_offset");
-    valid_paths.push_back("y_offset");
-    valid_paths.push_back("z_offset");
-
-    std::string surprises = surprise_check(valid_paths, params);
-    if(surprises != "")
-    {
-       res = false;
-       info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKH3Slice::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKH3Slice input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
     bool throw_error = false;
-    std::string topo_name = detail::resolve_topology(params(),
-                                                     this->name(),
-                                                     collection,
-                                                     throw_error);
-    if(topo_name == "")
-    {
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
 
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::VectorMagnitude mag;
+
+  mag.SetInput(&data);
+  mag.SetField(field_name);
+  if (params().has_path("output_name")) {
+    std::string output_name = params()["output_name"].as_string();
+    mag.SetResultName(output_name);
+  }
+
+  mag.Update();
+
+  vtkh::DataSet *mag_output = mag.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*mag_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete mag_output;
+  set_output<DataObject>(res);
+
+  RecordTime("VectorMagnitudeFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+VTKH3Slice::VTKH3Slice() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKH3Slice::~VTKH3Slice() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKH3Slice::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_3slice";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKH3Slice::verify_params(const conduit::Node &params,
+                               conduit::Node &info) {
+  info.reset();
+  bool res = true;
+  std::vector<std::string> valid_paths;
+  res &= check_string("topology", params, info, false);
+  valid_paths.push_back("topology");
+
+  res &= check_numeric("x_offset", params, info, false, true);
+  res &= check_numeric("y_offset", params, info, false, true);
+  res &= check_numeric("z_offset", params, info, false, true);
+  res = check_string("topology", params, info, false) && res;
+
+  valid_paths.push_back("x_offset");
+  valid_paths.push_back("y_offset");
+  valid_paths.push_back("z_offset");
+
+  std::string surprises = surprise_check(valid_paths, params);
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKH3Slice::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKH3Slice input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  bool throw_error = false;
+  std::string topo_name =
+      detail::resolve_topology(params(), this->name(), collection, throw_error);
+  if (topo_name == "") {
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Slice slicer;
+
+  slicer.SetInput(&data);
+
+  using Vec3f = vtkm::Vec<vtkm::Float32, 3>;
+  vtkm::Bounds bounds = data.GetGlobalBounds();
+  Vec3f center = bounds.Center();
+  Vec3f x_point = center;
+  Vec3f y_point = center;
+  Vec3f z_point = center;
+
+  //
+  // We look for offsets for each slice plane.
+  // Offset values are between -1 and 1 where -1 pushes the plane
+  // to the min extent on the bounds and 1 pushes the plane to
+  // the max extent
+  //
+
+  const float eps = 1e-5; // ensure that the slice is always inside the data set
+  if (params().has_path("x_offset")) {
+    float offset = get_float32(params()["x_offset"], data_object);
+    std::max(-1.f, std::min(1.f, offset));
+    float t = (offset + 1.f) / 2.f;
+    t = std::max(0.f + eps, std::min(1.f - eps, t));
+    x_point[0] = bounds.X.Min + t * (bounds.X.Max - bounds.X.Min);
+  }
+
+  if (params().has_path("y_offset")) {
+    float offset = get_float32(params()["y_offset"], data_object);
+    std::max(-1.f, std::min(1.f, offset));
+    float t = (offset + 1.f) / 2.f;
+    t = std::max(0.f + eps, std::min(1.f - eps, t));
+    y_point[1] = bounds.Y.Min + t * (bounds.Y.Max - bounds.Y.Min);
+  }
+
+  if (params().has_path("z_offset")) {
+    float offset = get_float32(params()["z_offset"], data_object);
+    std::max(-1.f, std::min(1.f, offset));
+    float t = (offset + 1.f) / 2.f;
+    t = std::max(0.f + eps, std::min(1.f - eps, t));
+    z_point[2] = bounds.Z.Min + t * (bounds.Z.Max - bounds.Z.Min);
+  }
+
+  Vec3f x_normal(1.f, 0.f, 0.f);
+  Vec3f y_normal(0.f, 1.f, 0.f);
+  Vec3f z_normal(0.f, 0.f, 1.f);
+
+  slicer.AddPlane(x_point, x_normal);
+  slicer.AddPlane(y_point, y_normal);
+  slicer.AddPlane(z_point, z_normal);
+  slicer.Update();
+
+  vtkh::DataSet *slice_output = slicer.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*slice_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete slice_output;
+  set_output<DataObject>(res);
+
+  RecordTime("ThreeSliceFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+VTKHTriangulate::VTKHTriangulate() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHTriangulate::~VTKHTriangulate() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHTriangulate::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_triangulate";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHTriangulate::verify_params(const conduit::Node &params,
+                                    conduit::Node &info) {
+  info.reset();
+
+  bool res = true;
+
+  res = check_string("topology", params, info, false) && res;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("topology");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHTriangulate::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKHTriangulate input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  bool throw_error = false;
+  std::string topo_name =
+      detail::resolve_topology(params(), this->name(), collection, throw_error);
+  if (topo_name == "") {
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+  vtkh::Triangulate tri;
+
+  tri.SetInput(&data);
+
+  tri.Update();
+
+  vtkh::DataSet *tri_output = tri.GetOutput();
+
+  VTKHCollection *new_coll = new VTKHCollection();
+  new_coll->add(*tri_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete tri_output;
+  set_output<DataObject>(res);
+
+  RecordTime("TriangulateFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+VTKHCleanGrid::VTKHCleanGrid() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHCleanGrid::~VTKHCleanGrid() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHCleanGrid::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_clean";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHCleanGrid::verify_params(const conduit::Node &params,
+                                  conduit::Node &info) {
+  info.reset();
+
+  bool res = true;
+
+  res = check_string("topology", params, info, false) && res;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("topology");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHCleanGrid::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKHCleanGrid input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  bool throw_error = false;
+  std::string topo_name =
+      detail::resolve_topology(params(), this->name(), collection, throw_error);
+  if (topo_name == "") {
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+  vtkh::CleanGrid cleaner;
+
+  cleaner.SetInput(&data);
+
+  cleaner.Update();
+
+  vtkh::DataSet *clean_output = cleaner.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*clean_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete clean_output;
+  set_output<DataObject>(res);
+
+  RecordTime("CleanGridFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+VTKHSlice::VTKHSlice() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHSlice::~VTKHSlice() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHSlice::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_slice";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHSlice::verify_params(const conduit::Node &params,
+                              conduit::Node &info) {
+  info.reset();
+
+  bool res = true;
+
+  if (params.has_path("point/x_offset") && params.has_path("point/x")) {
+    info["errors"].append() =
+        "Cannot specify the plane point as both an offset and explicit point";
+    res = false;
+  }
+
+  if (params.has_path("point/x")) {
+    res &= check_numeric("point/x", params, info, true, true);
+    res = check_numeric("point/y", params, info, true, true) && res;
+    res = check_numeric("point/z", params, info, true, true) && res;
+  } else if (params.has_path("point/x_offset")) {
+    res &= check_numeric("point/x_offset", params, info, true, true);
+    res = check_numeric("point/y_offset", params, info, true, true) && res;
+    res = check_numeric("point/z_offset", params, info, true, true) && res;
+  } else {
+    info["errors"].append() = "Slice must specify a point for the plane.";
+    res = false;
+  }
+
+  res = check_string("topology", params, info, false) && res;
+
+  res = check_numeric("normal/x", params, info, true, true) && res;
+  res = check_numeric("normal/y", params, info, true, true) && res;
+  res = check_numeric("normal/z", params, info, true, true) && res;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("point/x");
+  valid_paths.push_back("point/y");
+  valid_paths.push_back("point/z");
+  valid_paths.push_back("point/x_offset");
+  valid_paths.push_back("point/y_offset");
+  valid_paths.push_back("point/z_offset");
+  valid_paths.push_back("normal/x");
+  valid_paths.push_back("normal/y");
+  valid_paths.push_back("normal/z");
+  valid_paths.push_back("topology");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHSlice::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKHSlice input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  bool throw_error = false;
+  std::string topo_name =
+      detail::resolve_topology(params(), this->name(), collection, throw_error);
+  if (topo_name == "") {
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+  vtkh::Slice slicer;
+
+  slicer.SetInput(&data);
+
+  const Node &n_point = params()["point"];
+  const Node &n_normal = params()["normal"];
+
+  using Vec3f = vtkm::Vec<vtkm::Float32, 3>;
+  vtkm::Bounds bounds = data.GetGlobalBounds();
+  Vec3f point;
+
+  const float eps = 1e-5; // ensure that the slice is always inside the data set
+
+  if (n_point.has_path("x_offset")) {
+    float offset = get_float32(n_point["x_offset"], data_object);
+    std::max(-1.f, std::min(1.f, offset));
+    float t = (offset + 1.f) / 2.f;
+    t = std::max(0.f + eps, std::min(1.f - eps, t));
+    point[0] = bounds.X.Min + t * (bounds.X.Max - bounds.X.Min);
+
+    offset = get_float32(n_point["y_offset"], data_object);
+    std::max(-1.f, std::min(1.f, offset));
+    t = (offset + 1.f) / 2.f;
+    t = std::max(0.f + eps, std::min(1.f - eps, t));
+    point[1] = bounds.Y.Min + t * (bounds.Y.Max - bounds.Y.Min);
+
+    offset = get_float32(n_point["z_offset"], data_object);
+    std::max(-1.f, std::min(1.f, offset));
+    t = (offset + 1.f) / 2.f;
+    t = std::max(0.f + eps, std::min(1.f - eps, t));
+    point[2] = bounds.Z.Min + t * (bounds.Z.Max - bounds.Z.Min);
+  } else {
+    point[0] = get_float32(n_point["x"], data_object);
+    point[1] = get_float32(n_point["y"], data_object);
+    point[2] = get_float32(n_point["z"], data_object);
+  }
+
+  Vec3f v_normal;
+  v_normal[0] = get_float32(n_normal["x"], data_object);
+  v_normal[1] = get_float32(n_normal["y"], data_object);
+  v_normal[2] = get_float32(n_normal["z"], data_object);
+
+  slicer.AddPlane(point, v_normal);
+  slicer.Update();
+
+  vtkh::DataSet *slice_output = slicer.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = new VTKHCollection();
+  //= collection->copy_without_topology(topo_name);
+  new_coll->add(*slice_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete slice_output;
+  set_output<DataObject>(res);
+
+  RecordTime("SliceFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+VTKHGhostStripper::VTKHGhostStripper() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHGhostStripper::~VTKHGhostStripper() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHGhostStripper::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_ghost_stripper";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHGhostStripper::verify_params(const conduit::Node &params,
+                                      conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+
+  res = check_numeric("min_value", params, info, true, true) && res;
+  res = check_numeric("max_value", params, info, true, true) && res;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("min_value");
+  valid_paths.push_back("max_value");
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHGhostStripper::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKHGhostStripper input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  // ask what topology this field is associated with and
+  // get the right data set
+  std::string field_name = params()["field"].as_string();
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  bool field_exists = topo_name != "";
+  // Check to see of the ghost field even exists
+  bool do_strip = field_exists;
+
+  if (do_strip) {
     vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+    vtkh::GhostStripper stripper;
 
-    vtkh::Slice slicer;
-
-    slicer.SetInput(&data);
-
-    using Vec3f = vtkm::Vec<vtkm::Float32,3>;
-    vtkm::Bounds bounds = data.GetGlobalBounds();
-    Vec3f center = bounds.Center();
-    Vec3f x_point = center;
-    Vec3f y_point = center;
-    Vec3f z_point = center;
-
-    //
-    // We look for offsets for each slice plane.
-    // Offset values are between -1 and 1 where -1 pushes the plane
-    // to the min extent on the bounds and 1 pushes the plane to
-    // the max extent
-    //
-
-    const float eps = 1e-5; // ensure that the slice is always inside the data set
-    if(params().has_path("x_offset"))
-    {
-      float offset = get_float32(params()["x_offset"], data_object);
-      std::max(-1.f, std::min(1.f, offset));
-      float t = (offset + 1.f) / 2.f;
-      t = std::max(0.f + eps, std::min(1.f - eps, t));
-      x_point[0] = bounds.X.Min + t * (bounds.X.Max - bounds.X.Min);
-    }
-
-    if(params().has_path("y_offset"))
-    {
-      float offset = get_float32(params()["y_offset"], data_object);
-      std::max(-1.f, std::min(1.f, offset));
-      float t = (offset + 1.f) / 2.f;
-      t = std::max(0.f + eps, std::min(1.f - eps, t));
-      y_point[1] = bounds.Y.Min + t * (bounds.Y.Max - bounds.Y.Min);
-    }
-
-    if(params().has_path("z_offset"))
-    {
-      float offset = get_float32(params()["z_offset"], data_object);
-      std::max(-1.f, std::min(1.f, offset));
-      float t = (offset + 1.f) / 2.f;
-      t = std::max(0.f + eps, std::min(1.f - eps, t));
-      z_point[2] = bounds.Z.Min + t * (bounds.Z.Max - bounds.Z.Min);
-    }
-
-    Vec3f x_normal(1.f, 0.f, 0.f);
-    Vec3f y_normal(0.f, 1.f, 0.f);
-    Vec3f z_normal(0.f, 0.f, 1.f);
-
-
-    slicer.AddPlane(x_point, x_normal);
-    slicer.AddPlane(y_point, y_normal);
-    slicer.AddPlane(z_point, z_normal);
-    slicer.Update();
-
-    vtkh::DataSet *slice_output = slicer.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*slice_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete slice_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("ThreeSliceFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-}
-
-//-----------------------------------------------------------------------------
-VTKHTriangulate::VTKHTriangulate()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHTriangulate::~VTKHTriangulate()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHTriangulate::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_triangulate";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHTriangulate::verify_params(const conduit::Node &params,
-                               conduit::Node &info)
-{
-    info.reset();
-
-    bool res = true;
-
-    res = check_string("topology",params, info, false) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("topology");
-
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHTriangulate::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKHTriangulate input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    bool throw_error = false;
-    std::string topo_name = detail::resolve_topology(params(),
-                                                     this->name(),
-                                                     collection,
-                                                     throw_error);
-    if(topo_name == "")
-    {
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-    vtkh::Triangulate tri;
-
-    tri.SetInput(&data);
-
-    tri.Update();
-
-    vtkh::DataSet *tri_output = tri.GetOutput();
-
-    VTKHCollection *new_coll = new VTKHCollection();
-    new_coll->add(*tri_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete tri_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("TriangulateFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-}
-
-//-----------------------------------------------------------------------------
-VTKHCleanGrid::VTKHCleanGrid()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHCleanGrid::~VTKHCleanGrid()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHCleanGrid::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_clean";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHCleanGrid::verify_params(const conduit::Node &params,
-                         conduit::Node &info)
-{
-    info.reset();
-
-    bool res = true;
-
-    res = check_string("topology",params, info, false) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("topology");
-
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHCleanGrid::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKHCleanGrid input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    bool throw_error = false;
-    std::string topo_name = detail::resolve_topology(params(),
-                                                     this->name(),
-                                                     collection,
-                                                     throw_error);
-    if(topo_name == "")
-    {
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-    vtkh::CleanGrid cleaner;
-
-    cleaner.SetInput(&data);
-
-    cleaner.Update();
-
-    vtkh::DataSet *clean_output = cleaner.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*clean_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete clean_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("CleanGridFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-
-}
-
-//-----------------------------------------------------------------------------
-VTKHSlice::VTKHSlice()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHSlice::~VTKHSlice()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHSlice::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_slice";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHSlice::verify_params(const conduit::Node &params,
-                         conduit::Node &info)
-{
-    info.reset();
-
-    bool res = true;
-
-
-    if(params.has_path("point/x_offset") && params.has_path("point/x"))
-    {
-      info["errors"]
-        .append() = "Cannot specify the plane point as both an offset and explicit point";
-      res = false;
-    }
-
-    if(params.has_path("point/x"))
-    {
-      res &= check_numeric("point/x",params, info, true, true);
-      res = check_numeric("point/y",params, info, true, true) && res;
-      res = check_numeric("point/z",params, info, true, true) && res;
-    }
-    else if(params.has_path("point/x_offset"))
-    {
-      res &= check_numeric("point/x_offset",params, info, true, true);
-      res = check_numeric("point/y_offset",params, info, true, true) && res;
-      res = check_numeric("point/z_offset",params, info, true, true) && res;
-    }
-    else
-    {
-      info["errors"]
-        .append() = "Slice must specify a point for the plane.";
-      res = false;
-    }
-
-    res = check_string("topology",params, info, false) && res;
-
-    res = check_numeric("normal/x",params, info, true, true) && res;
-    res = check_numeric("normal/y",params, info, true, true) && res;
-    res = check_numeric("normal/z",params, info, true, true) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("point/x");
-    valid_paths.push_back("point/y");
-    valid_paths.push_back("point/z");
-    valid_paths.push_back("point/x_offset");
-    valid_paths.push_back("point/y_offset");
-    valid_paths.push_back("point/z_offset");
-    valid_paths.push_back("normal/x");
-    valid_paths.push_back("normal/y");
-    valid_paths.push_back("normal/z");
-    valid_paths.push_back("topology");
-
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHSlice::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKHSlice input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    bool throw_error = false;
-    std::string topo_name = detail::resolve_topology(params(),
-                                                     this->name(),
-                                                     collection,
-                                                     throw_error);
-    if(topo_name == "")
-    {
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-    vtkh::Slice slicer;
-
-    slicer.SetInput(&data);
-
-    const Node &n_point = params()["point"];
-    const Node &n_normal = params()["normal"];
-
-    using Vec3f = vtkm::Vec<vtkm::Float32,3>;
-    vtkm::Bounds bounds = data.GetGlobalBounds();
-    Vec3f point;
-
-    const float eps = 1e-5; // ensure that the slice is always inside the data set
-
-    if(n_point.has_path("x_offset"))
-    {
-      float offset = get_float32(n_point["x_offset"], data_object);
-      std::max(-1.f, std::min(1.f, offset));
-      float t = (offset + 1.f) / 2.f;
-      t = std::max(0.f + eps, std::min(1.f - eps, t));
-      point[0] = bounds.X.Min + t * (bounds.X.Max - bounds.X.Min);
-
-      offset = get_float32(n_point["y_offset"], data_object);
-      std::max(-1.f, std::min(1.f, offset));
-      t = (offset + 1.f) / 2.f;
-      t = std::max(0.f + eps, std::min(1.f - eps, t));
-      point[1] = bounds.Y.Min + t * (bounds.Y.Max - bounds.Y.Min);
-
-      offset = get_float32(n_point["z_offset"], data_object);
-      std::max(-1.f, std::min(1.f, offset));
-      t = (offset + 1.f) / 2.f;
-      t = std::max(0.f + eps, std::min(1.f - eps, t));
-      point[2] = bounds.Z.Min + t * (bounds.Z.Max - bounds.Z.Min);
-    }
-    else
-    {
-      point[0] = get_float32(n_point["x"], data_object);
-      point[1] = get_float32(n_point["y"], data_object);
-      point[2] = get_float32(n_point["z"], data_object);
-    }
-
-    Vec3f v_normal;
-    v_normal[0] = get_float32(n_normal["x"], data_object);
-    v_normal[1] = get_float32(n_normal["y"], data_object);
-    v_normal[2] = get_float32(n_normal["z"], data_object);
-
-    slicer.AddPlane(point, v_normal);
-    slicer.Update();
-
-    vtkh::DataSet *slice_output = slicer.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = new VTKHCollection();
-    //= collection->copy_without_topology(topo_name);
-    new_coll->add(*slice_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete slice_output;
-    set_output<DataObject>(res);
-
-    RecordTime("SliceFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-}
-
-//-----------------------------------------------------------------------------
-VTKHGhostStripper::VTKHGhostStripper()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHGhostStripper::~VTKHGhostStripper()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHGhostStripper::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_ghost_stripper";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHGhostStripper::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-
-    res = check_numeric("min_value",params, info, true, true) && res;
-    res = check_numeric("max_value",params, info, true, true) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("min_value");
-    valid_paths.push_back("max_value");
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHGhostStripper::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKHGhostStripper input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    // ask what topology this field is associated with and
-    // get the right data set
-    std::string field_name = params()["field"].as_string();
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    bool field_exists = topo_name != "";
-    // Check to see of the ghost field even exists
-    bool do_strip = field_exists;
-
-    if(do_strip)
-    {
-      vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-      vtkh::GhostStripper stripper;
-
-      stripper.SetInput(&data);
-      stripper.SetField(field_name);
-
-      const Node &n_min_val = params()["min_value"];
-      const Node &n_max_val = params()["max_value"];
-
-      int min_val = n_min_val.to_int32();
-      int max_val = n_max_val.to_int32();
-
-      stripper.SetMaxValue(max_val);
-      stripper.SetMinValue(min_val);
-
-      stripper.Update();
-
-      vtkh::DataSet *stripper_output = stripper.GetOutput();
-
-      // we need to pass through the rest of the topologies, untouched,
-      // and add the result of this operation
-      VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-      new_coll->add(*stripper_output, topo_name);
-      // re wrap in data object
-      DataObject *res =  new DataObject(new_coll);
-      delete stripper_output;
-      set_output<DataObject>(res);
-    }
-    else
-    {
-      set_output<DataObject>(data_object);
-    }
-    
-    RecordTime("GhostStripperFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-}
-
-//-----------------------------------------------------------------------------
-VTKHThreshold::VTKHThreshold()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHThreshold::~VTKHThreshold()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHThreshold::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_threshold";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHThreshold::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-
-    res = check_numeric("min_value",params, info, true, true) && res;
-    res = check_numeric("max_value",params, info, true, true) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("min_value");
-    valid_paths.push_back("max_value");
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-
-//-----------------------------------------------------------------------------
-void
-VTKHThreshold::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_threshold input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::Threshold thresher;
-
-    thresher.SetInput(&data);
-    thresher.SetField(field_name);
+    stripper.SetInput(&data);
+    stripper.SetField(field_name);
 
     const Node &n_min_val = params()["min_value"];
     const Node &n_max_val = params()["max_value"];
 
-    // convert to contig doubles
-    double min_val = get_float64(n_min_val, data_object);
-    double max_val = get_float64(n_max_val, data_object);
-    thresher.SetUpperThreshold(max_val);
-    thresher.SetLowerThreshold(min_val);
+    int min_val = n_min_val.to_int32();
+    int max_val = n_max_val.to_int32();
 
-    thresher.Update();
+    stripper.SetMaxValue(max_val);
+    stripper.SetMinValue(min_val);
 
-    vtkh::DataSet *thresh_output = thresher.GetOutput();
+    stripper.Update();
+
+    vtkh::DataSet *stripper_output = stripper.GetOutput();
 
     // we need to pass through the rest of the topologies, untouched,
     // and add the result of this operation
     VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*thresh_output, topo_name);
+    new_coll->add(*stripper_output, topo_name);
     // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete thresh_output;
+    DataObject *res = new DataObject(new_coll);
+    delete stripper_output;
     set_output<DataObject>(res);
-    
-    RecordTime("ThresholdFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
+  } else {
+    set_output<DataObject>(data_object);
+  }
+
+  RecordTime("GhostStripperFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
 }
 
 //-----------------------------------------------------------------------------
-VTKHClip::VTKHClip()
-:Filter()
-{
-// empty
+VTKHThreshold::VTKHThreshold() : Filter() {
+  // empty
 }
 
 //-----------------------------------------------------------------------------
-VTKHClip::~VTKHClip()
-{
-// empty
+VTKHThreshold::~VTKHThreshold() {
+  // empty
 }
 
 //-----------------------------------------------------------------------------
-void
-VTKHClip::declare_interface(Node &i)
-{
-    i["type_name"] = "vtkh_clip";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
+void VTKHThreshold::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_threshold";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
 }
 
 //-----------------------------------------------------------------------------
-bool
-VTKHClip::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-    bool res = true;
+bool VTKHThreshold::verify_params(const conduit::Node &params,
+                                  conduit::Node &info) {
+  info.reset();
 
-    bool type_present = false;
+  bool res = check_string("field", params, info, true);
 
-    if(params.has_child("sphere"))
-    {
-      type_present = true;
-    }
-    else if(params.has_child("box"))
-    {
-      type_present = true;
-    }
-    else if(params.has_child("plane"))
-    {
-      type_present = true;
-    }
-    else if(params.has_child("multi_plane"))
-    {
-      type_present = true;
-    }
+  res = check_numeric("min_value", params, info, true, true) && res;
+  res = check_numeric("max_value", params, info, true, true) && res;
 
-    if(!type_present)
-    {
-        info["errors"].append() = "Missing required parameter. Clip must specify a 'sphere', 'box', 'plane', or 'mulit_plane'";
-        res = false;
-    }
-    else
-    {
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("min_value");
+  valid_paths.push_back("max_value");
+  std::string surprises = surprise_check(valid_paths, params);
 
-      res &= check_string("topology",params, info, false);
-      if(params.has_child("sphere"))
-      {
-         res = check_numeric("sphere/center/x",params, info, true, true) && res;
-         res = check_numeric("sphere/center/y",params, info, true, true) && res;
-         res = check_numeric("sphere/center/z",params, info, true, true) && res;
-         res = check_numeric("sphere/radius",params, info, true, true) && res;
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
 
-      }
-      else if(params.has_child("box"))
-      {
-         res = check_numeric("box/min/x",params, info, true, true) && res;
-         res = check_numeric("box/min/y",params, info, true, true) && res;
-         res = check_numeric("box/min/z",params, info, true, true) && res;
-         res = check_numeric("box/max/x",params, info, true, true) && res;
-         res = check_numeric("box/max/y",params, info, true, true) && res;
-         res = check_numeric("box/max/z",params, info, true, true) && res;
-      }
-      else if(params.has_child("plane"))
-      {
-         res = check_numeric("plane/point/x",params, info, true, true) && res;
-         res = check_numeric("plane/point/y",params, info, true, true) && res;
-         res = check_numeric("plane/point/z",params, info, true, true) && res;
-         res = check_numeric("plane/normal/x",params, info, true, true) && res;
-         res = check_numeric("plane/normal/y",params, info, true, true) && res;
-         res = check_numeric("plane/normal/z",params, info, true, true) && res;
-      }
-      else if(params.has_child("multi_plane"))
-      {
-         res = check_numeric("multi_plane/point1/x",params, info, true, true) && res;
-         res = check_numeric("multi_plane/point1/y",params, info, true, true) && res;
-         res = check_numeric("multi_plane/point1/z",params, info, true, true) && res;
-         res = check_numeric("multi_plane/normal1/x",params, info, true, true) && res;
-         res = check_numeric("multi_plane/normal1/y",params, info, true, true) && res;
-         res = check_numeric("multi_plane/normal1/z",params, info, true, true) && res;
-
-         res = check_numeric("multi_plane/point2/x",params, info, true, true) && res;
-         res = check_numeric("multi_plane/point2/y",params, info, true, true) && res;
-         res = check_numeric("multi_plane/point2/z",params, info, true, true) && res;
-         res = check_numeric("multi_plane/normal2/x",params, info, true, true) && res;
-         res = check_numeric("multi_plane/normal2/y",params, info, true, true) && res;
-         res = check_numeric("multi_plane/normal2/z",params, info, true, true) && res;
-      }
-    }
-
-    res = check_string("invert",params, info, false) && res;
-    res = check_string("topology",params, info, false) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("topology");
-    valid_paths.push_back("invert");
-    valid_paths.push_back("sphere/center/x");
-    valid_paths.push_back("sphere/center/y");
-    valid_paths.push_back("sphere/center/z");
-    valid_paths.push_back("sphere/radius");
-    valid_paths.push_back("box/min/x");
-    valid_paths.push_back("box/min/y");
-    valid_paths.push_back("box/min/z");
-    valid_paths.push_back("box/max/x");
-    valid_paths.push_back("box/max/y");
-    valid_paths.push_back("box/max/z");
-    valid_paths.push_back("plane/point/x");
-    valid_paths.push_back("plane/point/y");
-    valid_paths.push_back("plane/point/z");
-    valid_paths.push_back("plane/normal/x");
-    valid_paths.push_back("plane/normal/y");
-    valid_paths.push_back("plane/normal/z");
-
-    valid_paths.push_back("multi_plane/point1/x");
-    valid_paths.push_back("multi_plane/point1/y");
-    valid_paths.push_back("multi_plane/point1/z");
-    valid_paths.push_back("multi_plane/normal1/x");
-    valid_paths.push_back("multi_plane/normal1/y");
-    valid_paths.push_back("multi_plane/normal1/z");
-
-    valid_paths.push_back("multi_plane/point2/x");
-    valid_paths.push_back("multi_plane/point2/y");
-    valid_paths.push_back("multi_plane/point2/z");
-    valid_paths.push_back("multi_plane/normal2/x");
-    valid_paths.push_back("multi_plane/normal2/y");
-    valid_paths.push_back("multi_plane/normal2/z");
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
+  return res;
 }
 
-
 //-----------------------------------------------------------------------------
-void
-VTKHClip::execute()
-{
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKHClip input must be a data object");
-    }
+void VTKHThreshold::execute() {
+  auto startT = std::chrono::steady_clock::now();
 
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_threshold input must be a data object");
+  }
 
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
     bool throw_error = false;
-    std::string topo_name = detail::resolve_topology(params(),
-                                                     this->name(),
-                                                     collection,
-                                                     throw_error);
-    if(topo_name == "")
-    {
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Threshold thresher;
+
+  thresher.SetInput(&data);
+  thresher.SetField(field_name);
+
+  const Node &n_min_val = params()["min_value"];
+  const Node &n_max_val = params()["max_value"];
+
+  // convert to contig doubles
+  double min_val = get_float64(n_min_val, data_object);
+  double max_val = get_float64(n_max_val, data_object);
+  thresher.SetUpperThreshold(max_val);
+  thresher.SetLowerThreshold(min_val);
+
+  thresher.Update();
+
+  vtkh::DataSet *thresh_output = thresher.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*thresh_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete thresh_output;
+  set_output<DataObject>(res);
+
+  RecordTime("ThresholdFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+VTKHClip::VTKHClip() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHClip::~VTKHClip() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHClip::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_clip";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHClip::verify_params(const conduit::Node &params, conduit::Node &info) {
+  info.reset();
+  bool res = true;
+
+  bool type_present = false;
+
+  if (params.has_child("sphere")) {
+    type_present = true;
+  } else if (params.has_child("box")) {
+    type_present = true;
+  } else if (params.has_child("plane")) {
+    type_present = true;
+  } else if (params.has_child("multi_plane")) {
+    type_present = true;
+  }
+
+  if (!type_present) {
+    info["errors"].append() = "Missing required parameter. Clip must specify a "
+                              "'sphere', 'box', 'plane', or 'mulit_plane'";
+    res = false;
+  } else {
+
+    res &= check_string("topology", params, info, false);
+    if (params.has_child("sphere")) {
+      res = check_numeric("sphere/center/x", params, info, true, true) && res;
+      res = check_numeric("sphere/center/y", params, info, true, true) && res;
+      res = check_numeric("sphere/center/z", params, info, true, true) && res;
+      res = check_numeric("sphere/radius", params, info, true, true) && res;
+
+    } else if (params.has_child("box")) {
+      res = check_numeric("box/min/x", params, info, true, true) && res;
+      res = check_numeric("box/min/y", params, info, true, true) && res;
+      res = check_numeric("box/min/z", params, info, true, true) && res;
+      res = check_numeric("box/max/x", params, info, true, true) && res;
+      res = check_numeric("box/max/y", params, info, true, true) && res;
+      res = check_numeric("box/max/z", params, info, true, true) && res;
+    } else if (params.has_child("plane")) {
+      res = check_numeric("plane/point/x", params, info, true, true) && res;
+      res = check_numeric("plane/point/y", params, info, true, true) && res;
+      res = check_numeric("plane/point/z", params, info, true, true) && res;
+      res = check_numeric("plane/normal/x", params, info, true, true) && res;
+      res = check_numeric("plane/normal/y", params, info, true, true) && res;
+      res = check_numeric("plane/normal/z", params, info, true, true) && res;
+    } else if (params.has_child("multi_plane")) {
+      res = check_numeric("multi_plane/point1/x", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/point1/y", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/point1/z", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/normal1/x", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/normal1/y", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/normal1/z", params, info, true, true) &&
+            res;
+
+      res = check_numeric("multi_plane/point2/x", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/point2/y", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/point2/z", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/normal2/x", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/normal2/y", params, info, true, true) &&
+            res;
+      res = check_numeric("multi_plane/normal2/z", params, info, true, true) &&
+            res;
+    }
+  }
+
+  res = check_string("invert", params, info, false) && res;
+  res = check_string("topology", params, info, false) && res;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("topology");
+  valid_paths.push_back("invert");
+  valid_paths.push_back("sphere/center/x");
+  valid_paths.push_back("sphere/center/y");
+  valid_paths.push_back("sphere/center/z");
+  valid_paths.push_back("sphere/radius");
+  valid_paths.push_back("box/min/x");
+  valid_paths.push_back("box/min/y");
+  valid_paths.push_back("box/min/z");
+  valid_paths.push_back("box/max/x");
+  valid_paths.push_back("box/max/y");
+  valid_paths.push_back("box/max/z");
+  valid_paths.push_back("plane/point/x");
+  valid_paths.push_back("plane/point/y");
+  valid_paths.push_back("plane/point/z");
+  valid_paths.push_back("plane/normal/x");
+  valid_paths.push_back("plane/normal/y");
+  valid_paths.push_back("plane/normal/z");
+
+  valid_paths.push_back("multi_plane/point1/x");
+  valid_paths.push_back("multi_plane/point1/y");
+  valid_paths.push_back("multi_plane/point1/z");
+  valid_paths.push_back("multi_plane/normal1/x");
+  valid_paths.push_back("multi_plane/normal1/y");
+  valid_paths.push_back("multi_plane/normal1/z");
+
+  valid_paths.push_back("multi_plane/point2/x");
+  valid_paths.push_back("multi_plane/point2/y");
+  valid_paths.push_back("multi_plane/point2/z");
+  valid_paths.push_back("multi_plane/normal2/x");
+  valid_paths.push_back("multi_plane/normal2/y");
+  valid_paths.push_back("multi_plane/normal2/z");
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHClip::execute() {
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKHClip input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  bool throw_error = false;
+  std::string topo_name =
+      detail::resolve_topology(params(), this->name(), collection, throw_error);
+  if (topo_name == "") {
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Clip clipper;
+
+  clipper.SetInput(&data);
+
+  if (params().has_path("sphere")) {
+    const Node &sphere = params()["sphere"];
+    double center[3];
+
+    center[0] = get_float64(sphere["center/x"], data_object);
+    center[1] = get_float64(sphere["center/y"], data_object);
+    center[2] = get_float64(sphere["center/z"], data_object);
+    double radius = get_float64(sphere["radius"], data_object);
+    clipper.SetSphereClip(center, radius);
+  } else if (params().has_path("box")) {
+    const Node &box = params()["box"];
+    vtkm::Bounds bounds;
+    bounds.X.Min = get_float64(box["min/x"], data_object);
+    bounds.Y.Min = get_float64(box["min/y"], data_object);
+    bounds.Z.Min = get_float64(box["min/z"], data_object);
+    bounds.X.Max = get_float64(box["max/x"], data_object);
+    bounds.Y.Max = get_float64(box["max/y"], data_object);
+    bounds.Z.Max = get_float64(box["max/z"], data_object);
+    clipper.SetBoxClip(bounds);
+  } else if (params().has_path("plane")) {
+    const Node &plane = params()["plane"];
+    double point[3], normal[3];
+    ;
+
+    point[0] = get_float64(plane["point/x"], data_object);
+    point[1] = get_float64(plane["point/y"], data_object);
+    point[2] = get_float64(plane["point/z"], data_object);
+    normal[0] = get_float64(plane["normal/x"], data_object);
+    normal[1] = get_float64(plane["normal/y"], data_object);
+    normal[2] = get_float64(plane["normal/z"], data_object);
+    clipper.SetPlaneClip(point, normal);
+  } else if (params().has_path("multi_plane")) {
+    const Node &plane = params()["multi_plane"];
+    double point1[3], normal1[3], point2[3], normal2[3];
+
+    point1[0] = get_float64(plane["point1/x"], data_object);
+    point1[1] = get_float64(plane["point1/y"], data_object);
+    point1[2] = get_float64(plane["point1/z"], data_object);
+    normal1[0] = get_float64(plane["normal1/x"], data_object);
+    normal1[1] = get_float64(plane["normal1/y"], data_object);
+    normal1[2] = get_float64(plane["normal1/z"], data_object);
+    point2[0] = get_float64(plane["point2/x"], data_object);
+    point2[1] = get_float64(plane["point2/y"], data_object);
+    point2[2] = get_float64(plane["point2/z"], data_object);
+    normal2[0] = get_float64(plane["normal2/x"], data_object);
+    normal2[1] = get_float64(plane["normal2/y"], data_object);
+    normal2[2] = get_float64(plane["normal2/z"], data_object);
+    clipper.Set2PlaneClip(point1, normal1, point2, normal2);
+  }
+
+  if (params().has_child("invert")) {
+    std::string invert = params()["invert"].as_string();
+    if (invert == "true") {
+      clipper.SetInvertClip(true);
+    }
+  }
+
+  clipper.Update();
+
+  vtkh::DataSet *clip_output = clipper.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*clip_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete clip_output;
+  set_output<DataObject>(res);
+}
+
+//-----------------------------------------------------------------------------
+VTKHClipWithField::VTKHClipWithField() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHClipWithField::~VTKHClipWithField() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHClipWithField::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_clip_with_field";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHClipWithField::verify_params(const conduit::Node &params,
+                                      conduit::Node &info) {
+  info.reset();
+  bool res = check_numeric("clip_value", params, info, true, true);
+  res = check_string("field", params, info, true) && res;
+  res = check_string("invert", params, info, false) && res;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("clip_value");
+  valid_paths.push_back("invert");
+  valid_paths.push_back("field");
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHClipWithField::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKHClipWithField input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::ClipField clipper;
+
+  clipper.SetInput(&data);
+
+  if (params().has_child("invert")) {
+    std::string invert = params()["invert"].as_string();
+    if (invert == "true") {
+      clipper.SetInvertClip(true);
+    }
+  }
+
+  vtkm::Float64 clip_value = get_float64(params()["clip_value"], data_object);
+
+  clipper.SetField(field_name);
+  clipper.SetClipValue(clip_value);
+
+  clipper.Update();
+
+  vtkh::DataSet *clip_output = clipper.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*clip_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete clip_output;
+  set_output<DataObject>(res);
+}
+
+//-----------------------------------------------------------------------------
+VTKHIsoVolume::VTKHIsoVolume() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHIsoVolume::~VTKHIsoVolume() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHIsoVolume::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_iso_volume";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHIsoVolume::verify_params(const conduit::Node &params,
+                                  conduit::Node &info) {
+  info.reset();
+
+  bool res = check_numeric("min_value", params, info, true, true);
+  res = check_numeric("max_value", params, info, true, true) && res;
+  res = check_string("field", params, info, true) && res;
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("min_value");
+  valid_paths.push_back("max_value");
+  valid_paths.push_back("field");
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHIsoVolume::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("VTKHIsoVolume input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::IsoVolume clipper;
+
+  clipper.SetInput(&data);
+
+  vtkm::Range clip_range;
+  clip_range.Min = get_float64(params()["min_value"], data_object);
+  clip_range.Max = get_float64(params()["max_value"], data_object);
+
+  clipper.SetField(field_name);
+  clipper.SetRange(clip_range);
+
+  clipper.Update();
+
+  vtkh::DataSet *clip_output = clipper.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*clip_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete clip_output;
+  set_output<DataObject>(res);
+
+  RecordTime("IsoVolumeFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+//-----------------------------------------------------------------------------
+
+VTKHLagrangian::VTKHLagrangian() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHLagrangian::~VTKHLagrangian() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHLagrangian::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_lagrangian";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHLagrangian::verify_params(const conduit::Node &params,
+                                   conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+  res &= check_numeric("step_size", params, info, true);
+  res &= check_numeric("write_frequency", params, info, true);
+  res &= check_numeric("cust_res", params, info, true);
+  res &= check_numeric("x_res", params, info, true);
+  res &= check_numeric("y_res", params, info, true);
+  res &= check_numeric("z_res", params, info, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("step_size");
+  valid_paths.push_back("write_frequency");
+  valid_paths.push_back("cust_res");
+  valid_paths.push_back("x_res");
+  valid_paths.push_back("y_res");
+  valid_paths.push_back("z_res");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHLagrangian::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_lagrangian input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  double step_size = params()["step_size"].to_float64();
+  int write_frequency = params()["write_frequency"].to_int32();
+  int cust_res = params()["cust_res"].to_int32();
+  int x_res = params()["x_res"].to_int32();
+  int y_res = params()["y_res"].to_int32();
+  int z_res = params()["z_res"].to_int32();
+
+  vtkh::Lagrangian lagrangian;
+
+  lagrangian.SetInput(&data);
+  lagrangian.SetField(field_name);
+  lagrangian.SetStepSize(step_size);
+  lagrangian.SetWriteFrequency(write_frequency);
+  lagrangian.SetCustomSeedResolution(cust_res);
+  lagrangian.SetSeedResolutionInX(x_res);
+  lagrangian.SetSeedResolutionInY(y_res);
+  lagrangian.SetSeedResolutionInZ(z_res);
+  lagrangian.Update();
+
+  vtkh::DataSet *lagrangian_output = lagrangian.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*lagrangian_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete lagrangian_output;
+  set_output<DataObject>(res);
+
+  RecordTime("LagrangianFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHLog::VTKHLog() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHLog::~VTKHLog() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHLog::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_log";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHLog::verify_params(const conduit::Node &params, conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+  res &= check_string("output_name", params, info, false);
+  res &= check_numeric("clamp_min_value", params, info, false, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("output_name");
+  valid_paths.push_back("clamp_min_value");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHLog::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_log input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Log logger;
+  logger.SetInput(&data);
+  logger.SetField(field_name);
+  if (params().has_path("output_name")) {
+    logger.SetResultField(params()["output_name"].as_string());
+  }
+
+  if (params().has_path("clamp_min_value")) {
+    double min_value = get_float64(params()["clamp_min_value"], data_object);
+    logger.SetClampMin(min_value);
+    logger.SetClampToMin(true);
+  }
+
+  logger.Update();
+
+  vtkh::DataSet *log_output = logger.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*log_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete log_output;
+  set_output<DataObject>(res);
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHRecenter::VTKHRecenter() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHRecenter::~VTKHRecenter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHRecenter::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_recenter";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHRecenter::verify_params(const conduit::Node &params,
+                                 conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+  res &= check_string("association", params, info, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("association");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHRecenter::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_recenter input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  std::string association = params()["association"].as_string();
+  if (association != "vertex" && association != "element") {
+    ASCENT_ERROR("Recenter: resulting field association '"
+                 << association << "'"
+                 << " must have a value of 'vertex' or 'element'");
+  }
+
+  vtkh::Recenter recenter;
+
+  recenter.SetInput(&data);
+  recenter.SetField(field_name);
+
+  if (association == "vertex") {
+    recenter.SetResultAssoc(vtkm::cont::Field::Association::POINTS);
+  }
+  if (association == "element") {
+    recenter.SetResultAssoc(vtkm::cont::Field::Association::CELL_SET);
+  }
+
+  recenter.Update();
+
+  vtkh::DataSet *recenter_output = recenter.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*recenter_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete recenter_output;
+  set_output<DataObject>(res);
+
+  RecordTime("RecenterFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+//-----------------------------------------------------------------------------
+
+VTKHHistSampling::VTKHHistSampling() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHHistSampling::~VTKHHistSampling() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHHistSampling::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_hist_sampling";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHHistSampling::verify_params(const conduit::Node &params,
+                                     conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+  res &= check_numeric("bins", params, info, false, true);
+  res &= check_numeric("sample_rate", params, info, false, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("bins");
+  valid_paths.push_back("sample_rate");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHHistSampling::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_hist_sampling input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  float sample_rate = .1f;
+  if (params().has_path("sample_rate")) {
+    sample_rate = get_float32(params()["sample_rate"], data_object);
+    if (sample_rate <= 0.f || sample_rate >= 1.f) {
+      ASCENT_ERROR("vtkh_hist_sampling 'sample_rate' value '"
+                   << sample_rate << "'"
+                   << " not in the range (0,1)");
+    }
+  }
+
+  int bins = 128;
+
+  if (params().has_path("bins")) {
+    bins = get_int32(params()["bins"], data_object);
+    if (bins <= 0.f) {
+      ASCENT_ERROR("vtkh_hist_sampling 'bins' value '" << bins << "'"
+                                                       << " must be positive");
+    }
+  }
+
+  // TODO: write helper functions for this
+  std::string ghost_field = "";
+  Node meta = Metadata::n_metadata;
+
+  if (meta.has_path("ghost_field")) {
+
+    // there can be multiple ghost fields on different topologies
+    // We should only find one(max) associated with this vtkh data set
+    const conduit::Node ghost_list = meta["ghost_field"];
+    const int num_ghosts = ghost_list.number_of_children();
+
+    for (int i = 0; i < num_ghosts; ++i) {
+      std::string ghost = ghost_list.child(i).as_string();
+      if (data.GlobalFieldExists(ghost_field)) {
+        ghost_field = ghost;
+        break;
+      }
+    }
+  }
+
+  vtkh::HistSampling hist;
+
+  hist.SetInput(&data);
+  hist.SetField(field_name);
+  hist.SetNumBins(bins);
+  hist.SetSamplingPercent(sample_rate);
+  if (ghost_field != "") {
+    hist.SetGhostField(ghost_field);
+  }
+
+  hist.Update();
+  vtkh::DataSet *hist_output = hist.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*hist_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete hist_output;
+  set_output<DataObject>(res);
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHQCriterion::VTKHQCriterion() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHQCriterion::~VTKHQCriterion() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHQCriterion::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_qcriterion";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHQCriterion::verify_params(const conduit::Node &params,
+                                   conduit::Node &info) {
+  info.reset();
+  bool res = check_string("field", params, info, true);
+  res &= check_string("output_name", params, info, false);
+  res &= check_string("use_cell_gradient", params, info, false);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("output_name");
+  valid_paths.push_back("use_cell_gradient");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHQCriterion::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_qcriterion input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Gradient grad;
+  grad.SetInput(&data);
+  grad.SetField(field_name);
+  vtkh::GradientParameters grad_params;
+  grad_params.compute_qcriterion = true;
+
+  if (params().has_path("use_cell_gradient")) {
+    if (params()["use_cell_gradient"].as_string() == "true") {
+      grad_params.use_point_gradient = false;
+    }
+  }
+  if (params().has_path("output_name")) {
+    grad_params.qcriterion_name = params()["output_name"].as_string();
+  }
+
+  grad.SetParameters(grad_params);
+  grad.Update();
+
+  vtkh::DataSet *grad_output = grad.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*grad_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete grad_output;
+  set_output<DataObject>(res);
+}
+//-----------------------------------------------------------------------------
+
+VTKHDivergence::VTKHDivergence() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHDivergence::~VTKHDivergence() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHDivergence::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_divergence";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHDivergence::verify_params(const conduit::Node &params,
+                                   conduit::Node &info) {
+  info.reset();
+  bool res = check_string("field", params, info, true);
+  res &= check_string("output_name", params, info, false);
+  res &= check_string("use_cell_gradient", params, info, false);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("output_name");
+  valid_paths.push_back("use_cell_gradient");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHDivergence::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_divergence input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Gradient grad;
+  grad.SetInput(&data);
+  grad.SetField(field_name);
+  vtkh::GradientParameters grad_params;
+  grad_params.compute_divergence = true;
+
+  if (params().has_path("use_cell_gradient")) {
+    if (params()["use_cell_gradient"].as_string() == "true") {
+      grad_params.use_point_gradient = false;
+    }
+  }
+
+  if (params().has_path("output_name")) {
+    grad_params.divergence_name = params()["output_name"].as_string();
+  }
+
+  grad.SetParameters(grad_params);
+  grad.Update();
+
+  vtkh::DataSet *grad_output = grad.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*grad_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete grad_output;
+  set_output<DataObject>(res);
+}
+//-----------------------------------------------------------------------------
+
+VTKHVorticity::VTKHVorticity() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHVorticity::~VTKHVorticity() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHVorticity::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_curl";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHVorticity::verify_params(const conduit::Node &params,
+                                  conduit::Node &info) {
+  info.reset();
+  bool res = check_string("field", params, info, true);
+  res &= check_string("output_name", params, info, false);
+  res &= check_string("use_cell_gradient", params, info, false);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("output_name");
+  valid_paths.push_back("use_cell_gradient");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHVorticity::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_vorticity input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Gradient grad;
+  grad.SetInput(&data);
+  grad.SetField(field_name);
+  vtkh::GradientParameters grad_params;
+  grad_params.compute_vorticity = true;
+
+  if (params().has_path("use_cell_gradient")) {
+    if (params()["use_cell_gradient"].as_string() == "true") {
+      grad_params.use_point_gradient = false;
+    }
+  }
+
+  if (params().has_path("output_name")) {
+    grad_params.vorticity_name = params()["output_name"].as_string();
+  }
+
+  grad.SetParameters(grad_params);
+  grad.Update();
+
+  vtkh::DataSet *grad_output = grad.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*grad_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete grad_output;
+  set_output<DataObject>(res);
+}
+//-----------------------------------------------------------------------------
+
+VTKHGradient::VTKHGradient() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHGradient::~VTKHGradient() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHGradient::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_gradient";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHGradient::verify_params(const conduit::Node &params,
+                                 conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+  res &= check_string("output_name", params, info, false);
+  res &= check_string("use_cell_gradient", params, info, false);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("output_name");
+  valid_paths.push_back("use_cell_gradient");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHGradient::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_gradient input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Gradient grad;
+  grad.SetInput(&data);
+  grad.SetField(field_name);
+  vtkh::GradientParameters grad_params;
+
+  if (params().has_path("use_cell_gradient")) {
+    if (params()["use_cell_gradient"].as_string() == "true") {
+      grad_params.use_point_gradient = false;
+    }
+  }
+
+  if (params().has_path("output_name")) {
+    grad_params.output_name = params()["output_name"].as_string();
+  }
+
+  grad.SetParameters(grad_params);
+  grad.Update();
+
+  vtkh::DataSet *grad_output = grad.GetOutput();
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*grad_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete grad_output;
+  set_output<DataObject>(res);
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHStats::VTKHStats() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHStats::~VTKHStats() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHStats::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_stats";
+  i["port_names"].append() = "in";
+  i["output_port"] = "false";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHStats::verify_params(const conduit::Node &params,
+                              conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHStats::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_stats input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::Statistics stats;
+
+  vtkh::Statistics::Result res = stats.Run(data, field_name);
+  int rank = 0;
+#ifdef ASCENT_MPI_ENABLED
+  MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+  MPI_Comm_rank(mpi_comm, &rank);
+#endif
+  if (rank == 0) {
+    res.Print(std::cout);
+  }
+}
+//-----------------------------------------------------------------------------
+
+VTKHHistogram::VTKHHistogram() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHHistogram::~VTKHHistogram() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHHistogram::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_histogram";
+  i["port_names"].append() = "in";
+  i["output_port"] = "false";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHHistogram::verify_params(const conduit::Node &params,
+                                  conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+  res &= check_numeric("bins", params, info, false, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("bins");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHHistogram::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_histogram input must be a data object");
+  }
+
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  int bins = 128;
+  if (params().has_path("bins")) {
+    bins = get_int32(params()["bins"], data_object);
+  }
+
+  vtkh::Histogram hist;
+
+  hist.SetNumBins(bins);
+  vtkh::Histogram::HistogramResult res = hist.Run(data, field_name);
+  int rank = 0;
+#ifdef ASCENT_MPI_ENABLED
+  MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+  MPI_Comm_rank(mpi_comm, &rank);
+#endif
+  if (rank == 0) {
+    res.Print(std::cout);
+  }
+}
+//-----------------------------------------------------------------------------
+
+VTKHProject2d::VTKHProject2d() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHProject2d::~VTKHProject2d() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHProject2d::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_project_2d";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHProject2d::verify_params(const conduit::Node &params,
+                                  conduit::Node &info) {
+  info.reset();
+  bool res = check_string("topology", params, info, false);
+  res &= check_numeric("image_width", params, info, false);
+  res &= check_numeric("image_height", params, info, false);
+
+  std::vector<std::string> valid_paths;
+  std::vector<std::string> ignore_paths;
+  valid_paths.push_back("topology");
+  valid_paths.push_back("image_width");
+  valid_paths.push_back("image_height");
+  valid_paths.push_back("camera");
+  ignore_paths.push_back("camera");
+
+  std::string surprises = surprise_check(valid_paths, ignore_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHProject2d::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_project2d input must be a data object");
+  }
+
+  // grab the data collection and ask for a vtkh collection
+  // which is one vtkh data set per topology
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  bool throw_error = false;
+  std::string topo_name =
+      detail::resolve_topology(params(), this->name(), collection, throw_error);
+  if (topo_name == "") {
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+  vtkm::Bounds bounds = data.GetGlobalBounds();
+  vtkm::rendering::Camera camera;
+  camera.ResetToBounds(bounds);
+
+  if (params().has_path("camera")) {
+    parse_camera(params()["camera"], camera);
+  }
+
+  int width = 512;
+  int height = 512;
+  if (params().has_path("image_width")) {
+    width = params()["image_width"].to_int32();
+  }
+  if (params().has_path("image_height")) {
+    height = params()["image_height"].to_int32();
+  }
+
+  vtkh::ScalarRenderer tracer;
+
+  tracer.SetWidth(width);
+  tracer.SetHeight(height);
+  tracer.SetInput(&data);
+  tracer.SetCamera(camera);
+
+  tracer.Update();
+
+  vtkh::DataSet *output = tracer.GetOutput();
+  VTKHCollection *new_coll = new VTKHCollection();
+  new_coll->add(*output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete output;
+  set_output<DataObject>(res);
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHNoOp::VTKHNoOp() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHNoOp::~VTKHNoOp() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHNoOp::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_no_op";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHNoOp::verify_params(const conduit::Node &params, conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHNoOp::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_no_op input must be a data object");
+  }
+
+  // grab the data collection and ask for a vtkh collection
+  // which is one vtkh data set per topology
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::NoOp noop;
+
+  noop.SetInput(&data);
+  noop.SetField(field_name);
+
+  noop.Update();
+
+  vtkh::DataSet *noop_output = noop.GetOutput();
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*noop_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete noop_output;
+  set_output<DataObject>(res);
+
+  RecordTime("NoOpFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHVectorComponent::VTKHVectorComponent() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHVectorComponent::~VTKHVectorComponent() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHVectorComponent::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_vector_component";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHVectorComponent::verify_params(const conduit::Node &params,
+                                        conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field", params, info, true);
+  res &= check_numeric("component", params, info, true);
+  res &= check_string("output_name", params, info, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("component");
+  valid_paths.push_back("output_name");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHVectorComponent::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_vector_component input must be a data object");
+  }
+
+  // grab the data collection and ask for a vtkh collection
+  // which is one vtkh data set per topology
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+  int component = params()["component"].to_int32();
+  std::string res_name = params()["output_name"].as_string();
+
+  std::string topo_name = collection->field_topology(field_name);
+
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  vtkh::VectorComponent comp;
+
+  comp.SetInput(&data);
+  comp.SetField(field_name);
+  comp.SetComponent(component);
+  comp.SetResultField(res_name);
+
+  comp.Update();
+
+  vtkh::DataSet *comp_output = comp.GetOutput();
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*comp_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete comp_output;
+  set_output<DataObject>(res);
+
+  RecordTime("VectorComponentFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHCompositeVector::VTKHCompositeVector() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHCompositeVector::~VTKHCompositeVector() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHCompositeVector::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_composite_vector";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHCompositeVector::verify_params(const conduit::Node &params,
+                                        conduit::Node &info) {
+  info.reset();
+
+  bool res = check_string("field1", params, info, true);
+  res &= check_string("field2", params, info, true);
+  res &= check_string("field3", params, info, false);
+  res &= check_string("output_name", params, info, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field1");
+  valid_paths.push_back("field2");
+  valid_paths.push_back("field3");
+  valid_paths.push_back("output_name");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHCompositeVector::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_composite_vector input must be a data object");
+  }
+
+  // grab the data collection and ask for a vtkh collection
+  // which is one vtkh data set per topology
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name1 = params()["field1"].as_string();
+  if (!collection->has_field(field_name1)) {
+    bool throw_error = false;
+    detail::field_error(field_name1, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string field_name2 = params()["field2"].as_string();
+  if (!collection->has_field(field_name2)) {
+    bool throw_error = false;
+    detail::field_error(field_name2, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string field_name3;
+
+  if (params().has_path("field3")) {
+    field_name3 = params()["field3"].as_string();
+    if (!collection->has_field(field_name3)) {
+      bool throw_error = false;
+      detail::field_error(field_name3, this->name(), collection, throw_error);
       // this creates a data object with an invalid soource
       set_output<DataObject>(new DataObject());
       return;
     }
+  }
 
+  std::string topo_name = collection->field_topology(field_name1);
 
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
 
-    vtkh::Clip clipper;
+  vtkh::CompositeVector comp;
 
-    clipper.SetInput(&data);
+  comp.SetInput(&data);
+  if (field_name3 == "") {
+    comp.SetFields(field_name1, field_name2);
+  } else {
+    comp.SetFields(field_name1, field_name2, field_name3);
+  }
+  std::string res_name = params()["output_name"].as_string();
+  comp.SetResultField(res_name);
+  comp.Update();
 
-    if(params().has_path("sphere"))
-    {
-      const Node &sphere = params()["sphere"];
-      double center[3];
+  vtkh::DataSet *comp_output = comp.GetOutput();
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*comp_output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete comp_output;
+  set_output<DataObject>(res);
 
-      center[0] = get_float64(sphere["center/x"], data_object);
-      center[1] = get_float64(sphere["center/y"], data_object);
-      center[2] = get_float64(sphere["center/z"], data_object);
-      double radius = get_float64(sphere["radius"], data_object);
-      clipper.SetSphereClip(center, radius);
+  RecordTime("CompositeVectorFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHScale::VTKHScale() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHScale::~VTKHScale() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHScale::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_scale_transform";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHScale::verify_params(const conduit::Node &params,
+                              conduit::Node &info) {
+  info.reset();
+
+  bool res = check_numeric("x_scale", params, info, true, true);
+  res &= check_numeric("y_scale", params, info, true, true);
+  res &= check_numeric("z_scale", params, info, true, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("x_scale");
+  valid_paths.push_back("y_scale");
+  valid_paths.push_back("z_scale");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHScale::execute() {
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_point_transform input must be a data object");
+  }
+
+  // grab the data collection and ask for a vtkh collection
+  // which is one vtkh data set per topology
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  float x_scale = get_float32(params()["x_scale"], data_object);
+  float y_scale = get_float32(params()["y_scale"], data_object);
+  float z_scale = get_float32(params()["z_scale"], data_object);
+
+  std::vector<std::string> topo_names = collection->topology_names();
+  int rank = 0;
+#ifdef ASCENT_MPI_ENABLED
+  MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+  MPI_Comm_rank(mpi_comm, &rank);
+#endif
+
+  VTKHCollection *new_coll = new VTKHCollection();
+  for (auto &topo : topo_names) {
+    vtkh::DataSet &data = collection->dataset_by_topology(topo);
+    vtkh::PointTransform transform;
+    transform.SetScale(x_scale, y_scale, z_scale);
+    transform.SetInput(&data);
+    transform.Update();
+    vtkh::DataSet *trans_output = transform.GetOutput();
+    new_coll->add(*trans_output, topo);
+    delete trans_output;
+  }
+
+  //// re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  set_output<DataObject>(res);
+}
+
+//-----------------------------------------------------------------------------
+
+VTKHParticleAdvection::VTKHParticleAdvection() : Filter() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+VTKHParticleAdvection::~VTKHParticleAdvection() {
+  // empty
+}
+
+//-----------------------------------------------------------------------------
+void VTKHParticleAdvection::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_particle_advection";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
+}
+
+//-----------------------------------------------------------------------------
+bool VTKHParticleAdvection::verify_params(const conduit::Node &params,
+                                          conduit::Node &info) {
+  info.reset();
+  bool res = check_string("field", params, info, true);
+  res &= check_numeric("seed_method", params, info, true, true);
+  res &= check_numeric("num_seeds", params, info, true, true);
+  res &= check_numeric("num_steps", params, info, true, true);
+  res &= check_numeric("step_size", params, info, true, true);
+  res &= check_numeric("seed_bounding_box_xmin", params, info, true, true);
+  res &= check_numeric("seed_bounding_box_xmax", params, info, true, true);
+  res &= check_numeric("seed_bounding_box_ymin", params, info, true, true);
+  res &= check_numeric("seed_bounding_box_ymax", params, info, true, true);
+  res &= check_numeric("seed_bounding_box_zmin", params, info, true, true);
+  res &= check_numeric("seed_bounding_box_zmax", params, info, true, true);
+  res &= check_string("record_trajectories", params, info, true);
+  res &= check_string("write_streamlines", params, info, true);
+
+  std::vector<std::string> valid_paths;
+  valid_paths.push_back("field");
+  valid_paths.push_back("seed_method");
+  valid_paths.push_back("num_seeds");
+  valid_paths.push_back("num_steps");
+  valid_paths.push_back("step_size");
+  valid_paths.push_back("seed_bounding_box_xmin");
+  valid_paths.push_back("seed_bounding_box_xmax");
+  valid_paths.push_back("seed_bounding_box_ymin");
+  valid_paths.push_back("seed_bounding_box_ymax");
+  valid_paths.push_back("seed_bounding_box_zmin");
+  valid_paths.push_back("seed_bounding_box_zmax");
+  valid_paths.push_back("record_trajectories");
+  valid_paths.push_back("write_streamlines");
+
+  std::string surprises = surprise_check(valid_paths, params);
+
+  if (surprises != "") {
+    res = false;
+    info["errors"].append() = surprises;
+  }
+
+  return res;
+}
+
+//-----------------------------------------------------------------------------
+void VTKHParticleAdvection::execute() {
+  auto startT = std::chrono::steady_clock::now();
+
+  if (!input(0).check_type<DataObject>()) {
+    ASCENT_ERROR("vtkh_particle_advection input must be a data object");
+  }
+
+  // grab the data collection and ask for a vtkh collection
+  // which is one vtkh data set per topology
+  DataObject *data_object = input<DataObject>(0);
+  if (!data_object->is_valid()) {
+    set_output<DataObject>(data_object);
+    return;
+  }
+  std::shared_ptr<VTKHCollection> collection =
+      data_object->as_vtkh_collection();
+
+  std::string field_name = params()["field"].as_string();
+  if (!collection->has_field(field_name)) {
+    bool throw_error = false;
+    detail::field_error(field_name, this->name(), collection, throw_error);
+    // this creates a data object with an invalid soource
+    set_output<DataObject>(new DataObject());
+    return;
+  }
+
+  std::string topo_name = collection->field_topology(field_name);
+  vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+
+  Node meta = Metadata::n_metadata;
+  int cycle = meta["cycle"].to_int32();
+  std::cout << "debug meta data 0:" << cycle << "," << field_name << ","
+            << topo_name << std::endl;
+
+  int rank = 0, numRanks = 0;
+#ifdef ASCENT_MPI_ENABLED
+  MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
+  MPI_Comm_rank(mpi_comm, &rank);
+  MPI_Comm_size(mpi_comm, &numRanks);
+#endif
+
+  std::vector<vtkm::Particle> seeds;
+  std::string seedType = params()["seed_method"].as_string();
+
+  if (seedType == "cell") {
+#ifdef ASCENT_MPI_ENABLED
+    using AxisArrayType = vtkm::cont::ArrayHandle<vtkm::FloatDefault>;
+    using CartesianProduct =
+        vtkm::cont::ArrayHandleCartesianProduct<AxisArrayType, AxisArrayType,
+                                                AxisArrayType>;
+
+    int particleCount = 0;
+    vtkm::Id numDomains = data.GetNumberOfDomains();
+    for (vtkm::Id i = 0; i < numDomains; i++) {
+      auto tempDS = data.GetDomain(i);
+      vtkm::cont::CellSetStructured<3> tempCS =
+          tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+      // auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+      auto t = tempDS.GetCoordinateSystem()
+                   .GetData()
+                   .AsArrayHandle<CartesianProduct>();
+
+      vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+      vtkm::cont::Invoker invoke;
+      invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
+
+      auto buff = cellCenters.ReadPortal();
+      for (int z = 0; z < cellCenters.GetNumberOfValues(); z++) {
+        vtkm::Particle p;
+        p.Pos = buff.Get(z);
+        p.ID = static_cast<vtkm::Id>(particleCount);
+        seeds.push_back(p);
+        particleCount++;
+      }
     }
-    else if(params().has_path("box"))
-    {
-      const Node &box = params()["box"];
-      vtkm::Bounds bounds;
-      bounds.X.Min= get_float64(box["min/x"], data_object);
-      bounds.Y.Min= get_float64(box["min/y"], data_object);
-      bounds.Z.Min= get_float64(box["min/z"], data_object);
-      bounds.X.Max = get_float64(box["max/x"], data_object);
-      bounds.Y.Max = get_float64(box["max/y"], data_object);
-      bounds.Z.Max = get_float64(box["max/z"], data_object);
-      clipper.SetBoxClip(bounds);
-    }
-    else if(params().has_path("plane"))
-    {
-      const Node &plane= params()["plane"];
-      double point[3], normal[3];;
+    // Make the paricle ID's unique
+    std::vector<int> particlesPerRank(numRanks, 0);
+    particlesPerRank[rank] = particleCount;
+    MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT,
+                  MPI_SUM, MPI_COMM_WORLD);
+    int offset = 0;
+    for (int i = 0; i < rank; i++)
+      offset += particlesPerRank[i];
 
-      point[0] =  get_float64(plane["point/x"], data_object);
-      point[1] =  get_float64(plane["point/y"], data_object);
-      point[2] =  get_float64(plane["point/z"], data_object);
-      normal[0] = get_float64(plane["normal/x"], data_object);
-      normal[1] = get_float64(plane["normal/y"], data_object);
-      normal[2] = get_float64(plane["normal/z"], data_object);
-      clipper.SetPlaneClip(point, normal);
+    if (offset > 0) {
+      for (auto &p : seeds)
+        p.ID += offset;
     }
-    else if(params().has_path("multi_plane"))
-    {
-      const Node &plane= params()["multi_plane"];
-      double point1[3], normal1[3], point2[3], normal2[3];
+#endif
+  } else if (seedType == "domain") {
+#ifdef ASCENT_MPI_ENABLED
+    using AxisArrayType = vtkm::cont::ArrayHandle<vtkm::FloatDefault>;
+    using CartesianProduct =
+        vtkm::cont::ArrayHandleCartesianProduct<AxisArrayType, AxisArrayType,
+                                                AxisArrayType>;
 
-      point1[0] = get_float64(plane["point1/x"], data_object);
-      point1[1] = get_float64(plane["point1/y"], data_object);
-      point1[2] = get_float64(plane["point1/z"], data_object);
-      normal1[0] = get_float64(plane["normal1/x"], data_object);
-      normal1[1] = get_float64(plane["normal1/y"], data_object);
-      normal1[2] = get_float64(plane["normal1/z"], data_object);
-      point2[0] = get_float64(plane["point2/x"], data_object);
-      point2[1] = get_float64(plane["point2/y"], data_object);
-      point2[2] = get_float64(plane["point2/z"], data_object);
-      normal2[0] = get_float64(plane["normal2/x"], data_object);
-      normal2[1] = get_float64(plane["normal2/y"], data_object);
-      normal2[2] = get_float64(plane["normal2/z"], data_object);
-      clipper.Set2PlaneClip(point1, normal1, point2, normal2);
-    }
+    int particleCount = 0;
+    vtkm::Id numDomains = data.GetNumberOfDomains();
+    for (vtkm::Id i = 0; i < numDomains; i++) {
+      auto tempDS = data.GetDomain(i);
+      vtkm::cont::CellSetStructured<3> tempCS =
+          tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+      // auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+      auto t = tempDS.GetCoordinateSystem()
+                   .GetData()
+                   .AsArrayHandle<CartesianProduct>();
 
-    if(params().has_child("invert"))
-    {
-      std::string invert = params()["invert"].as_string();
-      if(invert == "true")
-      {
-        clipper.SetInvertClip(true);
+      vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+      vtkm::cont::Invoker invoke;
+      invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
+      auto buff = cellCenters.ReadPortal();
+
+      for (int z = 0; z < cellCenters.GetNumberOfValues(); z++) {
+        vtkm::Particle p;
+        p.Pos = buff.Get(z);
+        p.ID = static_cast<vtkm::Id>(particleCount);
+        seeds.push_back(p);
+        particleCount++;
+        break;
       }
     }
 
-    clipper.Update();
+    // Make the paricle ID's unique
+    std::vector<int> particlesPerRank(numRanks, 0);
+    particlesPerRank[rank] = particleCount;
+    MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT,
+                  MPI_SUM, MPI_COMM_WORLD);
 
-    vtkh::DataSet *clip_output = clipper.GetOutput();
+    int offset = 0;
+    for (int i = 0; i < rank; i++)
+      offset += particlesPerRank[i];
 
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*clip_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete clip_output;
-    set_output<DataObject>(res);
-}
-
-//-----------------------------------------------------------------------------
-VTKHClipWithField::VTKHClipWithField()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHClipWithField::~VTKHClipWithField()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHClipWithField::declare_interface(Node &i)
-{
-    i["type_name"] = "vtkh_clip_with_field";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHClipWithField::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-    bool res = check_numeric("clip_value",params, info, true, true);
-    res = check_string("field",params, info, true) && res;
-    res = check_string("invert",params, info, false) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("clip_value");
-    valid_paths.push_back("invert");
-    valid_paths.push_back("field");
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
+    if (offset > 0) {
+      for (auto &p : seeds)
+        p.ID += offset;
     }
+#endif
+  } else if (seedType == "amrCell") {
+#ifdef ASCENT_MPI_ENABLED
+    using UniformCoordType = vtkm::cont::ArrayHandleUniformPointCoordinates;
 
-    return res;
-}
+    int particleCount = 0;
+    vtkm::Id numDomains = data.GetNumberOfDomains();
+    for (vtkm::Id i = 0; i < numDomains; i++) {
+      auto tempDS = data.GetDomain(i);
+      vtkm::cont::CellSetStructured<3> tempCS =
+          tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+      // auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+      auto t = tempDS.GetCoordinateSystem()
+                   .GetData()
+                   .AsArrayHandle<UniformCoordType>();
 
+      vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+      vtkm::cont::Invoker invoke;
+      invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
 
-//-----------------------------------------------------------------------------
-void
-VTKHClipWithField::execute()
-{
+      auto tempGhosts = tempDS.GetField("topo_ghosts");
+      auto ghostArr =
+          tempGhosts.GetData()
+              .AsArrayHandle<
+                  vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
+      const vtkm::FloatDefault *ghostBuff = ghostArr.GetReadPointer();
+      auto buff = cellCenters.ReadPortal();
 
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKHClipWithField input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::ClipField clipper;
-
-    clipper.SetInput(&data);
-
-    if(params().has_child("invert"))
-    {
-      std::string invert = params()["invert"].as_string();
-      if(invert == "true")
-      {
-        clipper.SetInvertClip(true);
+      for (int z = 0; z < cellCenters.GetNumberOfValues(); z++) {
+        if (ghostBuff[z] == 0) {
+          vtkm::Particle p;
+          p.Pos = buff.Get(z);
+          p.ID = static_cast<vtkm::Id>(particleCount);
+          seeds.push_back(p);
+          particleCount++;
+        }
       }
     }
 
-    vtkm::Float64 clip_value = get_float64(params()["clip_value"], data_object);
+    // Make the paricle ID's unique
+    std::vector<int> particlesPerRank(numRanks, 0);
+    particlesPerRank[rank] = particleCount;
+    MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT,
+                  MPI_SUM, MPI_COMM_WORLD);
 
-    clipper.SetField(field_name);
-    clipper.SetClipValue(clip_value);
+    int offset = 0;
+    for (int i = 0; i < rank; i++)
+      offset += particlesPerRank[i];
 
-    clipper.Update();
-
-    vtkh::DataSet *clip_output = clipper.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*clip_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete clip_output;
-    set_output<DataObject>(res);
-}
-
-//-----------------------------------------------------------------------------
-VTKHIsoVolume::VTKHIsoVolume()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHIsoVolume::~VTKHIsoVolume()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHIsoVolume::declare_interface(Node &i)
-{
-    i["type_name"] = "vtkh_iso_volume";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHIsoVolume::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_numeric("min_value",params, info, true, true);
-    res = check_numeric("max_value",params, info, true, true) && res;
-    res = check_string("field",params, info, true) && res;
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("min_value");
-    valid_paths.push_back("max_value");
-    valid_paths.push_back("field");
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
+    if (offset > 0) {
+      for (auto &p : seeds)
+        p.ID += offset;
     }
-
-    return res;
-}
-
-
-//-----------------------------------------------------------------------------
-void
-VTKHIsoVolume::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("VTKHIsoVolume input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::IsoVolume clipper;
-
-    clipper.SetInput(&data);
-
-    vtkm::Range clip_range;
-    clip_range.Min = get_float64(params()["min_value"], data_object);
-    clip_range.Max = get_float64(params()["max_value"], data_object);
-
-    clipper.SetField(field_name);
-    clipper.SetRange(clip_range);
-
-    clipper.Update();
-
-    vtkh::DataSet *clip_output = clipper.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*clip_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete clip_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("IsoVolumeFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());
-}
-//-----------------------------------------------------------------------------
-
-VTKHLagrangian::VTKHLagrangian()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHLagrangian::~VTKHLagrangian()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHLagrangian::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_lagrangian";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHLagrangian::verify_params(const conduit::Node &params,
-                        conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-    res &= check_numeric("step_size", params, info, true);
-    res &= check_numeric("write_frequency", params, info, true);
-    res &= check_numeric("cust_res", params, info, true);
-    res &= check_numeric("x_res", params, info, true);
-    res &= check_numeric("y_res", params, info, true);
-    res &= check_numeric("z_res", params, info, true);
-
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("step_size");
-    valid_paths.push_back("write_frequency");
-    valid_paths.push_back("cust_res");
-    valid_paths.push_back("x_res");
-    valid_paths.push_back("y_res");
-    valid_paths.push_back("z_res");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-    return res;
-}
-
-
-//-----------------------------------------------------------------------------
-void
-VTKHLagrangian::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_lagrangian input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-
-    double step_size = params()["step_size"].to_float64();
-    int write_frequency = params()["write_frequency"].to_int32();
-    int cust_res = params()["cust_res"].to_int32();
-    int x_res = params()["x_res"].to_int32();
-    int y_res = params()["y_res"].to_int32();
-    int z_res = params()["z_res"].to_int32();
-
-    vtkh::Lagrangian lagrangian;
-
-    lagrangian.SetInput(&data);
-    lagrangian.SetField(field_name);
-    lagrangian.SetStepSize(step_size);
-    lagrangian.SetWriteFrequency(write_frequency);
-    lagrangian.SetCustomSeedResolution(cust_res);
-    lagrangian.SetSeedResolutionInX(x_res);
-    lagrangian.SetSeedResolutionInY(y_res);
-    lagrangian.SetSeedResolutionInZ(z_res);
-    lagrangian.Update();
-
-    vtkh::DataSet *lagrangian_output = lagrangian.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*lagrangian_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete lagrangian_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("LagrangianFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHLog::VTKHLog()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHLog::~VTKHLog()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHLog::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_log";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHLog::verify_params(const conduit::Node &params,
-                        conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-    res &= check_string("output_name",params, info, false);
-    res &= check_numeric("clamp_min_value",params, info, false, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("output_name");
-    valid_paths.push_back("clamp_min_value");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHLog::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_log input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::Log logger;
-    logger.SetInput(&data);
-    logger.SetField(field_name);
-    if(params().has_path("output_name"))
-    {
-      logger.SetResultField(params()["output_name"].as_string());
-    }
-
-    if(params().has_path("clamp_min_value"))
-    {
-      double min_value = get_float64(params()["clamp_min_value"], data_object);
-      logger.SetClampMin(min_value);
-      logger.SetClampToMin(true);
-    }
-
-    logger.Update();
-
-    vtkh::DataSet *log_output = logger.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*log_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete log_output;
-    set_output<DataObject>(res);
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHRecenter::VTKHRecenter()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHRecenter::~VTKHRecenter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHRecenter::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_recenter";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHRecenter::verify_params(const conduit::Node &params,
-                        conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-    res &= check_string("association",params, info, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("association");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHRecenter::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_recenter input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-
-    std::string association = params()["association"].as_string();
-    if(association != "vertex" && association != "element")
-    {
-      ASCENT_ERROR("Recenter: resulting field association '"<<association<<"'"
-                   <<" must have a value of 'vertex' or 'element'");
-    }
-
-    vtkh::Recenter recenter;
-
-    recenter.SetInput(&data);
-    recenter.SetField(field_name);
-
-    if(association == "vertex")
-    {
-      recenter.SetResultAssoc(vtkm::cont::Field::Association::POINTS);
-    }
-    if(association == "element")
-    {
-      recenter.SetResultAssoc(vtkm::cont::Field::Association::CELL_SET);
-    }
-
-    recenter.Update();
-
-    vtkh::DataSet *recenter_output = recenter.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*recenter_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete recenter_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("RecenterFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
-}
-//-----------------------------------------------------------------------------
-
-VTKHHistSampling::VTKHHistSampling()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHHistSampling::~VTKHHistSampling()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHHistSampling::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_hist_sampling";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHHistSampling::verify_params(const conduit::Node &params,
-                        conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-    res &= check_numeric("bins",params, info, false, true);
-    res &= check_numeric("sample_rate",params, info, false, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("bins");
-    valid_paths.push_back("sample_rate");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHHistSampling::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_hist_sampling input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    float sample_rate = .1f;
-    if(params().has_path("sample_rate"))
-    {
-      sample_rate = get_float32(params()["sample_rate"], data_object);
-      if(sample_rate <= 0.f || sample_rate >= 1.f)
-      {
-        ASCENT_ERROR("vtkh_hist_sampling 'sample_rate' value '"<<sample_rate<<"'"
-                     <<" not in the range (0,1)");
-      }
-    }
-
-    int bins = 128;
-
-    if(params().has_path("bins"))
-    {
-      bins = get_int32(params()["bins"], data_object);
-      if(bins <= 0.f)
-      {
-        ASCENT_ERROR("vtkh_hist_sampling 'bins' value '"<<bins<<"'"
-                     <<" must be positive");
-      }
-    }
-
-    // TODO: write helper functions for this
-    std::string ghost_field = "";
-    Node meta = Metadata::n_metadata;
-
-    if(meta.has_path("ghost_field"))
-    {
-
-      // there can be multiple ghost fields on different topologies
-      // We should only find one(max) associated with this vtkh data set
-      const conduit::Node ghost_list = meta["ghost_field"];
-      const int num_ghosts = ghost_list.number_of_children();
-
-      for(int i = 0; i < num_ghosts; ++i)
-      {
-        std::string ghost = ghost_list.child(i).as_string();
-        if(data.GlobalFieldExists(ghost_field))
-        {
-          ghost_field = ghost;
+#endif
+  } else if (seedType == "amrDomain") {
+#ifdef ASCENT_MPI_ENABLED
+    using UniformCoordType = vtkm::cont::ArrayHandleUniformPointCoordinates;
+
+    int particleCount = 0;
+    vtkm::Id numDomains = data.GetNumberOfDomains();
+    for (vtkm::Id i = 0; i < numDomains; i++) {
+      auto tempDS = data.GetDomain(i);
+      vtkm::cont::CellSetStructured<3> tempCS =
+          tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
+      // auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+      auto t = tempDS.GetCoordinateSystem()
+                   .GetData()
+                   .AsArrayHandle<UniformCoordType>();
+
+      vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
+      vtkm::cont::Invoker invoke;
+      invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
+
+      auto tempGhosts = tempDS.GetField("topo_ghosts");
+      auto ghostArr =
+          tempGhosts.GetData()
+              .AsArrayHandle<
+                  vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
+      const vtkm::FloatDefault *ghostBuff = ghostArr.GetReadPointer();
+      auto buff = cellCenters.ReadPortal();
+
+      for (int z = 0; z < cellCenters.GetNumberOfValues(); z++) {
+        if (ghostBuff[z] == 0) {
+          vtkm::Particle p;
+          p.Pos = buff.Get(z);
+          p.ID = static_cast<vtkm::Id>(particleCount);
+          seeds.push_back(p);
+          particleCount++;
           break;
         }
       }
-
     }
 
-    vtkh::HistSampling hist;
+    // Make the paricle ID's unique
+    std::vector<int> particlesPerRank(numRanks, 0);
+    particlesPerRank[rank] = particleCount;
+    MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT,
+                  MPI_SUM, MPI_COMM_WORLD);
 
-    hist.SetInput(&data);
-    hist.SetField(field_name);
-    hist.SetNumBins(bins);
-    hist.SetSamplingPercent(sample_rate);
-    if(ghost_field != "")
-    {
-      hist.SetGhostField(ghost_field);
+    int offset = 0;
+    for (int i = 0; i < rank; i++)
+      offset += particlesPerRank[i];
+
+    if (offset > 0) {
+      for (auto &p : seeds)
+        p.ID += offset;
     }
+#endif
+  } else if (seedType == "box") {
+    float seedBBox[6];
+    seedBBox[0] = get_float32(params()["seed_bounding_box_xmin"], data_object);
+    seedBBox[1] = get_float32(params()["seed_bounding_box_xmax"], data_object);
+    seedBBox[2] = get_float32(params()["seed_bounding_box_ymin"], data_object);
+    seedBBox[3] = get_float32(params()["seed_bounding_box_ymax"], data_object);
+    seedBBox[4] = get_float32(params()["seed_bounding_box_zmin"], data_object);
+    seedBBox[5] = get_float32(params()["seed_bounding_box_zmax"], data_object);
 
-    hist.Update();
-    vtkh::DataSet *hist_output = hist.GetOutput();
+    float dx = seedBBox[1] - seedBBox[0];
+    float dy = seedBBox[3] - seedBBox[2];
+    float dz = seedBBox[5] - seedBBox[4];
 
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*hist_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete hist_output;
-    set_output<DataObject>(res);
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHQCriterion::VTKHQCriterion()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHQCriterion::~VTKHQCriterion()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHQCriterion::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_qcriterion";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHQCriterion::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-    bool res = check_string("field",params, info, true);
-    res &= check_string("output_name",params, info, false);
-    res &= check_string("use_cell_gradient",params, info, false);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("output_name");
-    valid_paths.push_back("use_cell_gradient");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHQCriterion::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_qcriterion input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
+    if (dx < 0 || dy < 0 || dz < 0) {
       bool throw_error = false;
       detail::field_error(field_name, this->name(), collection, throw_error);
       // this creates a data object with an invalid soource
       set_output<DataObject>(new DataObject());
       return;
     }
+    std::random_device device;
+    std::default_random_engine generator(0);
+    float zero(0), one(1);
+    std::uniform_real_distribution<vtkm::FloatDefault> distribution(zero, one);
+    // Generate seeds
+    // only necessary for the box method
+    int numSeeds = get_int32(params()["num_seeds"], data_object);
+    for (int i = 0; i < numSeeds; i++) {
+      float x = seedBBox[0] + dx * distribution(generator);
+      float y = seedBBox[2] + dy * distribution(generator);
+      float z = seedBBox[4] + dz * distribution(generator);
+      seeds.push_back(vtkm::Particle({x, y, z}, i));
+    }
+    // auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
+  }
 
-    std::string topo_name = collection->field_topology(field_name);
+  // record the seeds files
+  RecordSeeds(seedType, seeds, rank);
 
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
+  int numSteps = get_int32(params()["num_steps"], data_object);
+  float stepSize = get_float32(params()["step_size"], data_object);
 
-    vtkh::Gradient grad;
-    grad.SetInput(&data);
-    grad.SetField(field_name);
-    vtkh::GradientParameters grad_params;
-    grad_params.compute_qcriterion = true;
+  // rename ghost cells
+  vtkm::Id numDS = data.GetNumberOfDomains();
+  for (vtkm::Id i = 0; i < numDS; i++) {
+    if (data.GetDomain(i).HasField("topo_ghosts")) {
+      auto temp = data.GetDomain(i).GetField("topo_ghosts");
 
-    if(params().has_path("use_cell_gradient"))
-    {
-      if(params()["use_cell_gradient"].as_string() == "true")
-      {
-        grad_params.use_point_gradient = false;
+      if (temp.GetNumberOfValues() >= 1) {
+        auto ghostArr =
+            temp.GetData()
+                .AsArrayHandle<
+                    vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
+        const vtkm::FloatDefault *buff = ghostArr.GetReadPointer();
+        vtkm::cont::ArrayHandle<vtkm::UInt8> ghosts;
+        ghosts.Allocate(temp.GetNumberOfValues());
+        for (vtkm::Id z = 0; z < temp.GetNumberOfValues(); z++) {
+          ghosts.WritePortal().Set(z, static_cast<vtkm::UInt8>(buff[z]));
+        }
+        data.GetDomain(i).AddCellField("vtkmGhostCells", ghosts);
+        // data.GetDomain(i).RemoveField("topo_ghosts");
       }
     }
-    if(params().has_path("output_name"))
-    {
-      grad_params.qcriterion_name = params()["output_name"].as_string();
+  }
+
+  std::cout << "rank " << rank
+            << " start Streamline/ParticleAdvection:" << std::endl;
+
+  vtkh::DataSet *output = nullptr;
+  if (params()["record_trajectories"].as_string().compare("true") == 0) {
+    vtkh::Streamline sl;
+    sl.SetStepSize(stepSize);
+    sl.SetNumberOfSteps(numSteps);
+    sl.SetSeeds(seeds);
+    sl.SetField(field_name);
+    sl.SetInput(&data);
+    sl.Update();
+    output = sl.GetOutput();
+  } else {
+    vtkh::ParticleAdvection pa;
+    pa.SetStepSize(stepSize);
+    pa.SetNumberOfSteps(numSteps);
+    pa.SetSeeds(seeds);
+    pa.SetField(field_name);
+    pa.SetInput(&data);
+    pa.Update();
+    output = pa.GetOutput();
+  }
+  // std::cout << "--debug output start---" << std::endl;
+  // output->PrintSummary(std::cout);
+  // std::cout << "--debug output end---" << std::endl;
+
+  if (params()["write_streamlines"].as_string().compare("true") == 0) {
+    int numDomains = output->GetNumberOfDomains();
+    std::cerr << "num domains " << numDomains << std::endl;
+    for (int i = 0; i < numDomains; i++) {
+      char fileNm[128];
+      sprintf(fileNm, "ascentStreamlines.step%d.rank%d.domain%d.vtk",
+              GetCycle(), rank, i);
+      vtkm::io::VTKDataSetWriter write(fileNm);
+      write.WriteDataSet(output->GetDomain(i));
     }
-
-    grad.SetParameters(grad_params);
-    grad.Update();
-
-    vtkh::DataSet *grad_output = grad.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*grad_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete grad_output;
-    set_output<DataObject>(res);
-}
-//-----------------------------------------------------------------------------
-
-VTKHDivergence::VTKHDivergence()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHDivergence::~VTKHDivergence()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHDivergence::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_divergence";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHDivergence::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-    bool res = check_string("field",params, info, true);
-    res &= check_string("output_name",params, info, false);
-    res &= check_string("use_cell_gradient",params, info, false);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("output_name");
-    valid_paths.push_back("use_cell_gradient");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHDivergence::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_divergence input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::Gradient grad;
-    grad.SetInput(&data);
-    grad.SetField(field_name);
-    vtkh::GradientParameters grad_params;
-    grad_params.compute_divergence = true;
-
-    if(params().has_path("use_cell_gradient"))
-    {
-      if(params()["use_cell_gradient"].as_string() == "true")
-      {
-        grad_params.use_point_gradient = false;
-      }
-    }
-
-    if(params().has_path("output_name"))
-    {
-      grad_params.divergence_name = params()["output_name"].as_string();
-    }
-
-    grad.SetParameters(grad_params);
-    grad.Update();
-
-    vtkh::DataSet *grad_output = grad.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*grad_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete grad_output;
-    set_output<DataObject>(res);
-}
-//-----------------------------------------------------------------------------
-
-VTKHVorticity::VTKHVorticity()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHVorticity::~VTKHVorticity()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHVorticity::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_curl";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHVorticity::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-    bool res = check_string("field",params, info, true);
-    res &= check_string("output_name",params, info, false);
-    res &= check_string("use_cell_gradient",params, info, false);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("output_name");
-    valid_paths.push_back("use_cell_gradient");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHVorticity::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_vorticity input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::Gradient grad;
-    grad.SetInput(&data);
-    grad.SetField(field_name);
-    vtkh::GradientParameters grad_params;
-    grad_params.compute_vorticity = true;
-
-    if(params().has_path("use_cell_gradient"))
-    {
-      if(params()["use_cell_gradient"].as_string() == "true")
-      {
-        grad_params.use_point_gradient = false;
-      }
-    }
-
-    if(params().has_path("output_name"))
-    {
-      grad_params.vorticity_name = params()["output_name"].as_string();
-    }
-
-    grad.SetParameters(grad_params);
-    grad.Update();
-
-    vtkh::DataSet *grad_output = grad.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*grad_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete grad_output;
-    set_output<DataObject>(res);
-}
-//-----------------------------------------------------------------------------
-
-VTKHGradient::VTKHGradient()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHGradient::~VTKHGradient()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHGradient::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_gradient";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHGradient::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-    res &= check_string("output_name",params, info, false);
-    res &= check_string("use_cell_gradient",params, info, false);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("output_name");
-    valid_paths.push_back("use_cell_gradient");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHGradient::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_gradient input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::Gradient grad;
-    grad.SetInput(&data);
-    grad.SetField(field_name);
-    vtkh::GradientParameters grad_params;
-
-    if(params().has_path("use_cell_gradient"))
-    {
-      if(params()["use_cell_gradient"].as_string() == "true")
-      {
-        grad_params.use_point_gradient = false;
-      }
-    }
-
-    if(params().has_path("output_name"))
-    {
-      grad_params.output_name = params()["output_name"].as_string();
-    }
-
-    grad.SetParameters(grad_params);
-    grad.Update();
-
-    vtkh::DataSet *grad_output = grad.GetOutput();
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*grad_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete grad_output;
-    set_output<DataObject>(res);
+  }
+  std::cout << "debug after seeds 11" << std::endl;
+
+  // we need to pass through the rest of the topologies, untouched,
+  // and add the result of this operation
+  VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
+  new_coll->add(*output, topo_name);
+  // re wrap in data object
+  DataObject *res = new DataObject(new_coll);
+  delete output;
+  set_output<DataObject>(res);
+
+  RecordTime("ParticleAdvectionFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
 }
 
 //-----------------------------------------------------------------------------
 
-VTKHStats::VTKHStats()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHStats::~VTKHStats()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHStats::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_stats";
-    i["port_names"].append() = "in";
-    i["output_port"] = "false";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHStats::verify_params(const conduit::Node &params,
-                         conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHStats::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_stats input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::Statistics stats;
-
-    vtkh::Statistics::Result res = stats.Run(data, field_name);
-    int rank = 0;
-#ifdef ASCENT_MPI_ENABLED
-    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-    MPI_Comm_rank(mpi_comm, &rank);
-#endif
-    if(rank == 0)
-    {
-      res.Print(std::cout);
-    }
-}
-//-----------------------------------------------------------------------------
-
-VTKHHistogram::VTKHHistogram()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHHistogram::~VTKHHistogram()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHHistogram::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_histogram";
-    i["port_names"].append() = "in";
-    i["output_port"] = "false";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHHistogram::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-    res &= check_numeric("bins",params, info, false, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("bins");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHHistogram::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_histogram input must be a data object");
-    }
-
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    int bins = 128;
-    if(params().has_path("bins"))
-    {
-      bins = get_int32(params()["bins"], data_object);
-    }
-
-    vtkh::Histogram hist;
-
-    hist.SetNumBins(bins);
-    vtkh::Histogram::HistogramResult res = hist.Run(data, field_name);
-    int rank = 0;
-#ifdef ASCENT_MPI_ENABLED
-    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-    MPI_Comm_rank(mpi_comm, &rank);
-#endif
-    if(rank == 0)
-    {
-      res.Print(std::cout);
-    }
-}
-//-----------------------------------------------------------------------------
-
-VTKHProject2d::VTKHProject2d()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHProject2d::~VTKHProject2d()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHProject2d::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_project_2d";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHProject2d::verify_params(const conduit::Node &params,
-                             conduit::Node &info)
-{
-    info.reset();
-    bool res = check_string("topology",params, info, false);
-    res &= check_numeric("image_width",params, info, false);
-    res &= check_numeric("image_height",params, info, false);
-
-    std::vector<std::string> valid_paths;
-    std::vector<std::string> ignore_paths;
-    valid_paths.push_back("topology");
-    valid_paths.push_back("image_width");
-    valid_paths.push_back("image_height");
-    valid_paths.push_back("camera");
-    ignore_paths.push_back("camera");
-
-    std::string surprises = surprise_check(valid_paths, ignore_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHProject2d::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_project2d input must be a data object");
-    }
-
-    // grab the data collection and ask for a vtkh collection
-    // which is one vtkh data set per topology
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    bool throw_error = false;
-    std::string topo_name = detail::resolve_topology(params(),
-                                                     this->name(),
-                                                     collection,
-                                                     throw_error);
-    if(topo_name == "")
-    {
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-    vtkm::Bounds bounds = data.GetGlobalBounds();
-    vtkm::rendering::Camera camera;
-    camera.ResetToBounds(bounds);
-
-    if(params().has_path("camera"))
-    {
-      parse_camera(params()["camera"], camera);
-    }
-
-    int width = 512;
-    int height = 512;
-    if(params().has_path("image_width"))
-    {
-      width = params()["image_width"].to_int32();
-    }
-    if(params().has_path("image_height"))
-    {
-      height = params()["image_height"].to_int32();
-    }
-
-    vtkh::ScalarRenderer tracer;
-
-    tracer.SetWidth(width);
-    tracer.SetHeight(height);
-    tracer.SetInput(&data);
-    tracer.SetCamera(camera);
-
-    tracer.Update();
-
-    vtkh::DataSet *output = tracer.GetOutput();
-    VTKHCollection *new_coll = new VTKHCollection();
-    new_coll->add(*output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete output;
-    set_output<DataObject>(res);
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHNoOp::VTKHNoOp()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHNoOp::~VTKHNoOp()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHNoOp::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_no_op";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHNoOp::verify_params(const conduit::Node &params,
-                        conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHNoOp::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_no_op input must be a data object");
-    }
-
-    // grab the data collection and ask for a vtkh collection
-    // which is one vtkh data set per topology
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::NoOp noop;
-
-    noop.SetInput(&data);
-    noop.SetField(field_name);
-
-    noop.Update();
-
-    vtkh::DataSet *noop_output = noop.GetOutput();
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*noop_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete noop_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("NoOpFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHVectorComponent::VTKHVectorComponent()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHVectorComponent::~VTKHVectorComponent()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHVectorComponent::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_vector_component";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHVectorComponent::verify_params(const conduit::Node &params,
-                                   conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field",params, info, true);
-    res &= check_numeric("component",params, info, true);
-    res &= check_string("output_name",params, info, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("component");
-    valid_paths.push_back("output_name");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHVectorComponent::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_vector_component input must be a data object");
-    }
-
-    // grab the data collection and ask for a vtkh collection
-    // which is one vtkh data set per topology
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-    int component = params()["component"].to_int32();
-    std::string res_name = params()["output_name"].as_string();
-
-    std::string topo_name = collection->field_topology(field_name);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    vtkh::VectorComponent comp;
-
-    comp.SetInput(&data);
-    comp.SetField(field_name);
-    comp.SetComponent(component);
-    comp.SetResultField(res_name);
-
-    comp.Update();
-
-    vtkh::DataSet *comp_output = comp.GetOutput();
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*comp_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete comp_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("VectorComponentFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHCompositeVector::VTKHCompositeVector()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHCompositeVector::~VTKHCompositeVector()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHCompositeVector::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_composite_vector";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHCompositeVector::verify_params(const conduit::Node &params,
-                        conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_string("field1",params, info, true);
-    res &= check_string("field2",params, info, true);
-    res &= check_string("field3",params, info, false);
-    res &= check_string("output_name",params, info, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field1");
-    valid_paths.push_back("field2");
-    valid_paths.push_back("field3");
-    valid_paths.push_back("output_name");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHCompositeVector::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_composite_vector input must be a data object");
-    }
-
-    // grab the data collection and ask for a vtkh collection
-    // which is one vtkh data set per topology
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name1 = params()["field1"].as_string();
-    if(!collection->has_field(field_name1))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name1, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string field_name2 = params()["field2"].as_string();
-    if(!collection->has_field(field_name2))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name2, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string field_name3;
-
-    if(params().has_path("field3"))
-    {
-      field_name3 = params()["field3"].as_string();
-      if(!collection->has_field(field_name3))
-      {
-        bool throw_error = false;
-        detail::field_error(field_name3, this->name(), collection, throw_error);
-        // this creates a data object with an invalid soource
-        set_output<DataObject>(new DataObject());
-        return;
-      }
-    }
-
-    std::string topo_name = collection->field_topology(field_name1);
-
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-
-    vtkh::CompositeVector comp;
-
-    comp.SetInput(&data);
-    if(field_name3 == "")
-    {
-      comp.SetFields(field_name1, field_name2);
-    }
-    else
-    {
-      comp.SetFields(field_name1, field_name2, field_name3);
-    }
-    std::string res_name = params()["output_name"].as_string();
-    comp.SetResultField(res_name);
-    comp.Update();
-
-    vtkh::DataSet *comp_output = comp.GetOutput();
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*comp_output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete comp_output;
-    set_output<DataObject>(res);
-    
-    RecordTime("CompositeVectorFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count()); 
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHScale::VTKHScale()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHScale::~VTKHScale()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHScale::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_scale_transform";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHScale::verify_params(const conduit::Node &params,
-                                  conduit::Node &info)
-{
-    info.reset();
-
-    bool res = check_numeric("x_scale",params, info, true, true);
-    res &= check_numeric("y_scale",params, info, true, true);
-    res &= check_numeric("z_scale",params, info, true, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("x_scale");
-    valid_paths.push_back("y_scale");
-    valid_paths.push_back("z_scale");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHScale::execute()
-{
-
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_point_transform input must be a data object");
-    }
-
-    // grab the data collection and ask for a vtkh collection
-    // which is one vtkh data set per topology
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    float x_scale = get_float32(params()["x_scale"], data_object);
-    float y_scale = get_float32(params()["y_scale"], data_object);
-    float z_scale = get_float32(params()["z_scale"], data_object);
-
-    std::vector<std::string> topo_names = collection->topology_names();
-    int rank = 0;
-#ifdef ASCENT_MPI_ENABLED
-    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-    MPI_Comm_rank(mpi_comm, &rank);
-#endif
-
-    VTKHCollection *new_coll = new VTKHCollection();
-    for(auto &topo : topo_names)
-    {
-      vtkh::DataSet &data = collection->dataset_by_topology(topo);
-      vtkh::PointTransform transform;
-      transform.SetScale(x_scale, y_scale, z_scale);
-      transform.SetInput(&data);
-      transform.Update();
-      vtkh::DataSet *trans_output = transform.GetOutput();
-      new_coll->add(*trans_output, topo);
-      delete trans_output;
-    }
-
-    //// re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    set_output<DataObject>(res);
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHParticleAdvection::VTKHParticleAdvection()
-:Filter()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-VTKHParticleAdvection::~VTKHParticleAdvection()
-{
-// empty
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHParticleAdvection::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_particle_advection";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
-}
-
-//-----------------------------------------------------------------------------
-bool
-VTKHParticleAdvection::verify_params(const conduit::Node &params,
-                                     conduit::Node &info)
-{
-    info.reset();
-    bool res = check_string("field", params, info, true);
-    res &= check_numeric("seed_method", params, info, true, true);
-    res &= check_numeric("num_seeds", params, info, true, true);
-    res &= check_numeric("num_steps", params, info, true, true);
-    res &= check_numeric("step_size", params, info, true, true);
-    res &= check_numeric("seed_bounding_box_xmin", params, info, true, true);
-    res &= check_numeric("seed_bounding_box_xmax", params, info, true, true);
-    res &= check_numeric("seed_bounding_box_ymin", params, info, true, true);
-    res &= check_numeric("seed_bounding_box_ymax", params, info, true, true);
-    res &= check_numeric("seed_bounding_box_zmin", params, info, true, true);
-    res &= check_numeric("seed_bounding_box_zmax", params, info, true, true);
-    res &= check_string("record_trajectories",params, info, true);
-    res &= check_string("write_streamlines",params, info, true);
-
-    std::vector<std::string> valid_paths;
-    valid_paths.push_back("field");
-    valid_paths.push_back("seed_method");
-    valid_paths.push_back("num_seeds");
-    valid_paths.push_back("num_steps");
-    valid_paths.push_back("step_size");
-    valid_paths.push_back("seed_bounding_box_xmin");
-    valid_paths.push_back("seed_bounding_box_xmax");
-    valid_paths.push_back("seed_bounding_box_ymin");
-    valid_paths.push_back("seed_bounding_box_ymax");
-    valid_paths.push_back("seed_bounding_box_zmin");
-    valid_paths.push_back("seed_bounding_box_zmax");
-    valid_paths.push_back("record_trajectories");
-    valid_paths.push_back("write_streamlines");
-
-    std::string surprises = surprise_check(valid_paths, params);
-
-    if(surprises != "")
-    {
-      res = false;
-      info["errors"].append() = surprises;
-    }
-
-    return res;
-}
-
-//-----------------------------------------------------------------------------
-void
-VTKHParticleAdvection::execute()
-{
-    auto startT = std::chrono::steady_clock::now();
-    
-    if(!input(0).check_type<DataObject>())
-    {
-        ASCENT_ERROR("vtkh_particle_advection input must be a data object");
-    }
-
-    // grab the data collection and ask for a vtkh collection
-    // which is one vtkh data set per topology
-    DataObject *data_object = input<DataObject>(0);
-    if(!data_object->is_valid())
-    {
-      set_output<DataObject>(data_object);
-      return;
-    }
-    std::shared_ptr<VTKHCollection> collection = data_object->as_vtkh_collection();
-
-    std::string field_name = params()["field"].as_string();
-    if(!collection->has_field(field_name))
-    {
-      bool throw_error = false;
-      detail::field_error(field_name, this->name(), collection, throw_error);
-      // this creates a data object with an invalid soource
-      set_output<DataObject>(new DataObject());
-      return;
-    }
-
-    std::string topo_name = collection->field_topology(field_name);
-    vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
-
-    Node meta = Metadata::n_metadata;
-    int cycle = meta["cycle"].to_int32();
-    std::cout << "debug meta data 0:" << cycle << "," << field_name << "," << topo_name << std::endl;
-
-    int rank = 0, numRanks = 0;
-#ifdef ASCENT_MPI_ENABLED
-    MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
-    MPI_Comm_rank(mpi_comm, &rank);
-    MPI_Comm_size(mpi_comm, &numRanks);
-#endif
-
-    std::vector<vtkm::Particle> seeds;
-    std::string seedType = params()["seed_method"].as_string();
-    if(seedType == "cell")
-    {
-#ifdef ASCENT_MPI_ENABLED
-        using AxisArrayType = vtkm::cont::ArrayHandle<vtkm::FloatDefault>;
-        using CartesianProduct = vtkm::cont::ArrayHandleCartesianProduct<AxisArrayType, AxisArrayType, AxisArrayType>;
-
-        int particleCount = 0;
-        vtkm::Id numDomains = data.GetNumberOfDomains();
-        for (vtkm::Id i = 0; i < numDomains; i++)
-        {
-            auto tempDS = data.GetDomain(i);
-            vtkm::cont::CellSetStructured<3> tempCS =
-                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
-            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
-            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<CartesianProduct>();
-
-            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
-            vtkm::cont::Invoker invoke;
-            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
-
-            auto buff = cellCenters.ReadPortal();
-
-            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
-            {
-                vtkm::Particle p;
-                p.Pos = buff.Get(z);
-                p.ID = static_cast<vtkm::Id>(particleCount);
-                seeds.push_back(p);
-                particleCount++;
-            }
-        }
-
-        //Make the paricle ID's unique
-        std::vector<int> particlesPerRank(numRanks, 0);
-        particlesPerRank[rank] = particleCount;
-        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-
-        int offset = 0;
-        for (int i = 0; i < rank; i++)
-          offset += particlesPerRank[i];
-
-        if (offset > 0)
-        {
-          for (auto& p : seeds)
-            p.ID += offset;
-        }
-        
-        if(0)
-        {
-            ofstream *seedFile = new ofstream;
-            char nm[64];
-            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
-            seedFile->open(nm, ofstream::out);
-
-
-            (*seedFile) << "x " << "y " << "z " << "value" << endl;
-
-            for(long unsigned int i = 0; i < seeds.size(); i++)
-            {
-               (*seedFile) << seeds[i].Pos[0] << " "
-                        << seeds[i].Pos[1] << " "
-                        << seeds[i].Pos[2] << " "
-                        << "0" << endl;
-            }
-
-            seedFile->close();
-        }
-#endif
-    }
-    else if(seedType == "domain")
-    {
-#ifdef ASCENT_MPI_ENABLED
-        using AxisArrayType = vtkm::cont::ArrayHandle<vtkm::FloatDefault>;
-        using CartesianProduct = vtkm::cont::ArrayHandleCartesianProduct<AxisArrayType, AxisArrayType, AxisArrayType>;
-
-        int particleCount = 0;
-        vtkm::Id numDomains = data.GetNumberOfDomains();
-        for (vtkm::Id i = 0; i < numDomains; i++)
-        {
-            auto tempDS = data.GetDomain(i);
-            vtkm::cont::CellSetStructured<3> tempCS =
-                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
-            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
-            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<CartesianProduct>();
-
-            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
-            vtkm::cont::Invoker invoke;
-            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
-            auto buff = cellCenters.ReadPortal();
-
-            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
-            {
-                vtkm::Particle p;
-                p.Pos = buff.Get(z);
-                p.ID = static_cast<vtkm::Id>(particleCount);
-                seeds.push_back(p);
-                particleCount++;
-                break;
-            }
-        }
-
-        //Make the paricle ID's unique
-        std::vector<int> particlesPerRank(numRanks, 0);
-        particlesPerRank[rank] = particleCount;
-        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-
-        int offset = 0;
-        for (int i = 0; i < rank; i++)
-          offset += particlesPerRank[i];
-
-        if (offset > 0)
-        {
-          for (auto& p : seeds)
-            p.ID += offset;
-        }
-
-        if(0)
-        {
-            ofstream *seedFile = new ofstream;
-            char nm[64];
-            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
-            seedFile->open(nm, ofstream::out);
-
-
-            (*seedFile) << "x " << "y " << "z " << "value" << endl;
-
-            for(long unsigned int i = 0; i < seeds.size(); i++)
-            {
-               (*seedFile) << seeds[i].Pos[0] << " "
-                        << seeds[i].Pos[1] << " "
-                        << seeds[i].Pos[2] << " "
-                        << "0" << endl;
-            }
-
-            seedFile->close();
-        }
-#endif
-    }
-        if(seedType == "amrCell")
-    {
-#ifdef ASCENT_MPI_ENABLED
-        using UniformCoordType = vtkm::cont::ArrayHandleUniformPointCoordinates;
-
-        int particleCount = 0;
-        vtkm::Id numDomains = data.GetNumberOfDomains();
-        for (vtkm::Id i = 0; i < numDomains; i++)
-        {
-            auto tempDS = data.GetDomain(i);
-            vtkm::cont::CellSetStructured<3> tempCS =
-                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
-            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
-            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<UniformCoordType>();
-
-            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
-            vtkm::cont::Invoker invoke;
-            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
-
-            auto tempGhosts = tempDS.GetField("topo_ghosts");
-            auto ghostArr = tempGhosts.GetData().AsArrayHandle<vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
-            const vtkm::FloatDefault* ghostBuff = ghostArr.GetReadPointer();
-            auto buff = cellCenters.ReadPortal();
-
-            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
-            {
-                if(ghostBuff[z] == 0)
-                {
-                    vtkm::Particle p;
-                    p.Pos = buff.Get(z);
-                    p.ID = static_cast<vtkm::Id>(particleCount);
-                    seeds.push_back(p);
-                    particleCount++;
-                }
-            }
-        }
-
-        //Make the paricle ID's unique
-        std::vector<int> particlesPerRank(numRanks, 0);
-        particlesPerRank[rank] = particleCount;
-        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-
-        int offset = 0;
-        for (int i = 0; i < rank; i++)
-          offset += particlesPerRank[i];
-
-        if (offset > 0)
-        {
-          for (auto& p : seeds)
-            p.ID += offset;
-        }
-        
-        if(0)
-        {
-            ofstream *seedFile = new ofstream;
-            char nm[64];
-            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
-            seedFile->open(nm, ofstream::out);
-
-
-            (*seedFile) << "x " << "y " << "z " << "value" << endl;
-
-            for(long unsigned int i = 0; i < seeds.size(); i++)
-            {
-               (*seedFile) << seeds[i].Pos[0] << " "
-                        << seeds[i].Pos[1] << " "
-                        << seeds[i].Pos[2] << " "
-                        << "0" << endl;
-            }
-
-            seedFile->close();
-        }
-#endif
-    }
-    else if(seedType == "amrDomain")
-    {
-#ifdef ASCENT_MPI_ENABLED
-        using UniformCoordType = vtkm::cont::ArrayHandleUniformPointCoordinates;
-
-        int particleCount = 0;
-        vtkm::Id numDomains = data.GetNumberOfDomains();
-        for (vtkm::Id i = 0; i < numDomains; i++)
-        {
-            auto tempDS = data.GetDomain(i);
-            vtkm::cont::CellSetStructured<3> tempCS =
-                    tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
-            //auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
-            auto t = tempDS.GetCoordinateSystem().GetData().AsArrayHandle<UniformCoordType>();
-
-            vtkm::cont::ArrayHandle<vtkm::Vec3f> cellCenters;
-            vtkm::cont::Invoker invoke;
-            invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
-
-            auto tempGhosts = tempDS.GetField("topo_ghosts");
-            auto ghostArr = tempGhosts.GetData().AsArrayHandle<vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
-            const vtkm::FloatDefault* ghostBuff = ghostArr.GetReadPointer();
-            auto buff = cellCenters.ReadPortal();
-
-            for (int z = 0; z < cellCenters.GetNumberOfValues(); z++)
-            {
-                if(ghostBuff[z] == 0)
-                {
-                    vtkm::Particle p;
-                    p.Pos = buff.Get(z);
-                    p.ID = static_cast<vtkm::Id>(particleCount);
-                    seeds.push_back(p);
-                    particleCount++;
-                    break;
-                }
-            }
-        }
-
-        //Make the paricle ID's unique
-        std::vector<int> particlesPerRank(numRanks, 0);
-        particlesPerRank[rank] = particleCount;
-        MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-
-        int offset = 0;
-        for (int i = 0; i < rank; i++)
-          offset += particlesPerRank[i];
-
-        if (offset > 0)
-        {
-          for (auto& p : seeds)
-            p.ID += offset;
-        }
-
-        if(0)
-        {
-            ofstream *seedFile = new ofstream;
-            char nm[64];
-            sprintf(nm, "generatedSeeds_step%lld_rank%d.out", data.GetCycle(), rank);
-            seedFile->open(nm, ofstream::out);
-
-
-            (*seedFile) << "x " << "y " << "z " << "value" << endl;
-
-            for(long unsigned int i = 0; i < seeds.size(); i++)
-            {
-               (*seedFile) << seeds[i].Pos[0] << " "
-                        << seeds[i].Pos[1] << " "
-                        << seeds[i].Pos[2] << " "
-                        << "0" << endl;
-            }
-
-            seedFile->close();
-        }
-#endif
-    }
-    else if(seedType == "box")
-    {
-        float seedBBox[6];
-        seedBBox[0] = get_float32(params()["seed_bounding_box_xmin"], data_object);
-        seedBBox[1] = get_float32(params()["seed_bounding_box_xmax"], data_object);
-        seedBBox[2] = get_float32(params()["seed_bounding_box_ymin"], data_object);
-        seedBBox[3] = get_float32(params()["seed_bounding_box_ymax"], data_object);
-        seedBBox[4] = get_float32(params()["seed_bounding_box_zmin"], data_object);
-        seedBBox[5] = get_float32(params()["seed_bounding_box_zmax"], data_object);
-
-        float dx = seedBBox[1] - seedBBox[0];
-        float dy = seedBBox[3] - seedBBox[2];
-        float dz = seedBBox[5] - seedBBox[4];
-
-        if (dx < 0 || dy < 0 || dz < 0)
-        {
-          bool throw_error = false;
-          detail::field_error(field_name, this->name(), collection, throw_error);
-          // this creates a data object with an invalid soource
-          set_output<DataObject>(new DataObject());
-          return;
-        }
-
-        std::random_device device;
-        std::default_random_engine generator(0);
-        float  zero(0), one(1);
-        std::uniform_real_distribution<vtkm::FloatDefault> distribution(zero, one);
-        //Generate seeds
-
-        int numSeeds = get_int32(params()["num_seeds"], data_object);
-        for (int i = 0; i < numSeeds; i++)
-        {
-          float x = seedBBox[0] + dx * distribution(generator);
-          float y = seedBBox[2] + dy * distribution(generator);
-          float z = seedBBox[4] + dz * distribution(generator);
-          seeds.push_back(vtkm::Particle({x,y,z}, i));
-        }
-        auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
-    }
-    
-    int numSteps = get_int32(params()["num_steps"], data_object);
-    float stepSize = get_float32(params()["step_size"], data_object);
-
-    //rename ghost cells
-    vtkm::Id numDS = data.GetNumberOfDomains();
-    for (vtkm::Id i = 0; i < numDS; i++)
-    {
-      if(data.GetDomain(i).HasField("topo_ghosts"))
-      {
-          auto temp = data.GetDomain(i).GetField("topo_ghosts");
-
-          if(temp.GetNumberOfValues() >= 1)
-          {
-              auto ghostArr = temp.GetData().AsArrayHandle<vtkm::cont::ArrayHandleBasic<vtkm::FloatDefault>>();
-              const vtkm::FloatDefault* buff = ghostArr.GetReadPointer();
-              vtkm::cont::ArrayHandle<vtkm::UInt8> ghosts;
-              ghosts.Allocate(temp.GetNumberOfValues());
-              for (vtkm::Id z = 0; z < temp.GetNumberOfValues(); z++)
-              {
-                  ghosts.WritePortal().Set(z, static_cast<vtkm::UInt8>(buff[z]));
-              }
-              data.GetDomain(i).AddCellField("vtkmGhostCells", ghosts);
-              //data.GetDomain(i).RemoveField("topo_ghosts");
-          }
-      }
-    }
-
-    vtkh::DataSet *output = nullptr;
-    if (params()["record_trajectories"].as_string().compare("true") == 0)
-    {
-      vtkh::Streamline sl;
-      sl.SetStepSize(stepSize);
-      sl.SetNumberOfSteps(numSteps);
-      sl.SetSeeds(seeds);
-      sl.SetField(field_name);
-      sl.SetInput(&data);
-      sl.Update();
-      output = sl.GetOutput();
-    }
-    else
-    {
-      vtkh::ParticleAdvection pa;
-      pa.SetStepSize(stepSize);
-      pa.SetNumberOfSteps(numSteps);
-      pa.SetSeeds(seeds);
-      pa.SetField(field_name);
-      pa.SetInput(&data);
-      pa.Update();
-      output = pa.GetOutput();
-    }
-    
-    std::cout << "--debug output start---" << std::endl;
-    output->PrintSummary(std::cout);
-    std::cout << "--debug output end---" << std::endl;
-
-    if(params()["write_streamlines"].as_string().compare("true") == 0)
-    {
-      int numDomains = output->GetNumberOfDomains();
-      std::cerr << "num domains " << numDomains << std::endl;
-      for(int i = 0; i < numDomains; i++)
-      {
-        char fileNm[128];
-        sprintf(fileNm, "ascentStreamlines.step%lld.rank%d.domain%d.vtk", data.GetCycle(), rank, i);
-        vtkm::io::VTKDataSetWriter write(fileNm);
-        write.WriteDataSet(output->GetDomain(i));
-      }
-    }
-
-    // we need to pass through the rest of the topologies, untouched,
-    // and add the result of this operation
-    VTKHCollection *new_coll = collection->copy_without_topology(topo_name);
-    new_coll->add(*output, topo_name);
-    // re wrap in data object
-    DataObject *res =  new DataObject(new_coll);
-    delete output;
-    set_output<DataObject>(res);
-    
-    RecordTime("ParticleAdvectionFilter", GetCycle(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()-startT).count());  
-}
-
-//-----------------------------------------------------------------------------
-
-VTKHStreamline::VTKHStreamline()
-:VTKHParticleAdvection()
-{
+VTKHStreamline::VTKHStreamline() : VTKHParticleAdvection() {
   record_trajectories = true;
 }
 
-void
-VTKHStreamline::declare_interface(Node &i)
-{
-    i["type_name"]   = "vtkh_streamline";
-    i["port_names"].append() = "in";
-    i["output_port"] = "true";
+void VTKHStreamline::declare_interface(Node &i) {
+  i["type_name"] = "vtkh_streamline";
+  i["port_names"].append() = "in";
+  i["output_port"] = "true";
 }
 
 //-----------------------------------------------------------------------------
-VTKHStreamline::~VTKHStreamline()
-{
-// empty
+VTKHStreamline::~VTKHStreamline() {
+  // empty
 }
 
-
 //-----------------------------------------------------------------------------
-};
+}; // namespace filters
 //-----------------------------------------------------------------------------
 // -- end ascent::runtime::filters --
 //-----------------------------------------------------------------------------
 
-
 //-----------------------------------------------------------------------------
-};
+}; // namespace runtime
 //-----------------------------------------------------------------------------
 // -- end ascent::runtime --
 //-----------------------------------------------------------------------------
 
-
 //-----------------------------------------------------------------------------
-};
+}; // namespace ascent
 //-----------------------------------------------------------------------------
 // -- end ascent:: --
 //-----------------------------------------------------------------------------

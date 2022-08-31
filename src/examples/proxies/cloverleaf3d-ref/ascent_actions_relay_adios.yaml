@@ -1,0 +1,10 @@
+#An example of using a relay extract to save the data to adios.
+
+- action: add_extracts
+  extracts:
+    e1:
+      type: ADIOS2
+      params:
+        filename: "./output/out.bp"
+        engine: BPFile
+        QueueLimit: 1

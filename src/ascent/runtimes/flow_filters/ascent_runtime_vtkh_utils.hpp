@@ -24,7 +24,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
-
+#include <unordered_map>
 //-----------------------------------------------------------------------------
 // -- begin ascent:: --
 //-----------------------------------------------------------------------------
@@ -43,9 +43,17 @@ namespace runtime
 namespace filters
 {
 
-static std::ofstream *timingInfo = NULL;    
+static std::ofstream *timingInfo = NULL;
+static std::ofstream *counterInfo = NULL;
+
+//these counter should goes to vtkm actually
+extern std::mutex vtkhCounterMapMutex;
+extern std::unordered_map<std::string, uint> vtkhcounterMap;
+
 void RecordTime(const std::string &nm, int step, double time);
 int GetCycle();
+void IncCounter(const std::string &nm);
+void RecordCounter(const std::string &nm, int step);
 namespace detail
 {
 

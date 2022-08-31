@@ -44,6 +44,7 @@ SUBROUTINE visit(my_ascent)
   INTEGER :: nxc,nyc,nzc,nxv,nyv,nzv,nblocks
   INTEGER :: gnxc,gnyc,gnzc,gnxv,gnyv,gnzv
   INTEGER :: ghost_flag
+  INTEGER :: rank
   REAL(KIND=8)    :: temp_var
   REAL(KIND=8)    :: ascent_start_time,ascent_end_time
 
@@ -207,11 +208,12 @@ SUBROUTINE visit(my_ascent)
       scenes = conduit_node_fetch(add_scene_act,"scenes")
       CALL conduit_node_set_path_char8_str(scenes,"s1/plots/p1/type", "volume")
       CALL conduit_node_set_path_char8_str(scenes,"s1/plots/p1/field", "energy")
-      WRITE(*,*)'INFO ASCENT_PUBLISH_START'
+      !WRITE(*,*)'INFO ASCENT_PUBLISH_START'
       ascent_start_time = timer()
       CALL ascent_publish(my_ascent, sim_data)
       CALL ascent_execute(my_ascent, sim_actions)
       ascent_end_time = timer()
+      CALL MPI_COMM_RANK(MPI_COMM_WORLD,rank,err)
       WRITE(*,*)'INFO ASCENT_EXEC_TAKES',ascent_end_time - ascent_start_time
       CALL conduit_node_destroy(sim_actions)
       CALL conduit_node_destroy(sim_data)

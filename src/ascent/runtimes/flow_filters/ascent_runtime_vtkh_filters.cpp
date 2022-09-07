@@ -3122,11 +3122,6 @@ void VTKHParticleAdvection::execute() {
   std::string topo_name = collection->field_topology(field_name);
   vtkh::DataSet &data = collection->dataset_by_topology(topo_name);
 
-  Node meta = Metadata::n_metadata;
-  int cycle = meta["cycle"].to_int32();
-  std::cout << "debug meta data 0:" << cycle << "," << field_name << ","
-            << topo_name << std::endl;
-
   int rank = 0, numRanks = 0;
 #ifdef ASCENT_MPI_ENABLED
   MPI_Comm mpi_comm = MPI_Comm_f2c(Workspace::default_mpi_comm());
@@ -3136,7 +3131,11 @@ void VTKHParticleAdvection::execute() {
 
   std::vector<vtkm::Particle> seeds;
   std::string seedType = params()["seed_method"].as_string();
-
+  
+  //Attention!
+  //For amrwind application, use amrDomain, amrCell, or box. 
+  //For cloverleaf3D, just use domain, cell, or box
+  //They have different storageType for coordinates system
   if (seedType == "cell") {
 #ifdef ASCENT_MPI_ENABLED
     using AxisArrayType = vtkm::cont::ArrayHandle<vtkm::FloatDefault>;
@@ -3233,7 +3232,7 @@ void VTKHParticleAdvection::execute() {
   } else if (seedType == "amrCell") {
 #ifdef ASCENT_MPI_ENABLED
     using UniformCoordType = vtkm::cont::ArrayHandleUniformPointCoordinates;
-
+    //this is CartesianProduct for cloverleaf previously
     int particleCount = 0;
     vtkm::Id numDomains = data.GetNumberOfDomains();
     for (vtkm::Id i = 0; i < numDomains; i++) {
@@ -3241,6 +3240,10 @@ void VTKHParticleAdvection::execute() {
       vtkm::cont::CellSetStructured<3> tempCS =
           tempDS.GetCellSet().Cast<vtkm::cont::CellSetStructured<3>>();
       // auto t = tempDS.GetCoordinateSystem(0).GetDataAsMultiplexer();
+
+      tempDS.PrintSummary(std::cout);
+
+      // there are some issues for casting data into UniformCoordType here for cloverleaf
       auto t = tempDS.GetCoordinateSystem()
                    .GetData()
                    .AsArrayHandle<UniformCoordType>();
@@ -3249,6 +3252,7 @@ void VTKHParticleAdvection::execute() {
       vtkm::cont::Invoker invoke;
       invoke(vtkm::worklet::CellCenter{}, tempCS, t, cellCenters);
 
+      //does the cloverleaf have the topo ghosts?
       auto tempGhosts = tempDS.GetField("topo_ghosts");
       auto ghostArr =
           tempGhosts.GetData()
@@ -3374,7 +3378,7 @@ void VTKHParticleAdvection::execute() {
   }
 
   // record the seeds files
-  RecordSeeds(seedType, seeds, rank);
+  // RecordSeeds(seedType, seeds, rank);
 
   int numSteps = get_int32(params()["num_steps"], data_object);
   float stepSize = get_float32(params()["step_size"], data_object);
@@ -3393,6 +3397,7 @@ void VTKHParticleAdvection::execute() {
         const vtkm::FloatDefault *buff = ghostArr.GetReadPointer();
         vtkm::cont::ArrayHandle<vtkm::UInt8> ghosts;
         ghosts.Allocate(temp.GetNumberOfValues());
+        //TODO get the write portal here
         for (vtkm::Id z = 0; z < temp.GetNumberOfValues(); z++) {
           ghosts.WritePortal().Set(z, static_cast<vtkm::UInt8>(buff[z]));
         }
@@ -3431,7 +3436,9 @@ void VTKHParticleAdvection::execute() {
 
   if (params()["write_streamlines"].as_string().compare("true") == 0) {
     int numDomains = output->GetNumberOfDomains();
-    std::cerr << "num domains " << numDomains << std::endl;
+    if(rank==0){
+      std::cerr << "num domains " << numDomains << std::endl;
+    }
     for (int i = 0; i < numDomains; i++) {
       char fileNm[128];
       sprintf(fileNm, "ascentStreamlines.step%d.rank%d.domain%d.vtk",
@@ -3440,7 +3447,6 @@ void VTKHParticleAdvection::execute() {
       write.WriteDataSet(output->GetDomain(i));
     }
   }
-  std::cout << "debug after seeds 11" << std::endl;
 
   // we need to pass through the rest of the topologies, untouched,
   // and add the result of this operation

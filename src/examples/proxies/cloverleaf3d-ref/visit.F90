@@ -214,7 +214,10 @@ SUBROUTINE visit(my_ascent)
       CALL ascent_execute(my_ascent, sim_actions)
       ascent_end_time = timer()
       CALL MPI_COMM_RANK(MPI_COMM_WORLD,rank,err)
-      WRITE(*,*)'INFO ASCENT_EXEC_TAKES',ascent_end_time - ascent_start_time
+      !TODO, only the rank 0
+      IF(rank==0) THEN
+        WRITE(*,*)'INFO ASCENT_EXEC_TAKES',ascent_end_time - ascent_start_time
+      END IF     
       CALL conduit_node_destroy(sim_actions)
       CALL conduit_node_destroy(sim_data)
 

@@ -27,6 +27,7 @@
 #include <ascent_logging.hpp>
 #include <ascent_file_system.hpp>
 #include <ascent_data_object.hpp>
+#include <ascent_metadata.hpp>
 
 #include <vtkh/vtkh.hpp>
 #include <vtkh/DataSet.hpp>
@@ -164,6 +165,7 @@ ADIOS2::verify_params(const conduit::Node &params,
 void
 ADIOS2::execute()
 {
+  auto startT = std::chrono::steady_clock::now();
   ASCENT_INFO("execute");
 
   std::string engineType = params()["engine"].as_string();
@@ -210,6 +212,13 @@ ADIOS2::execute()
     pds.AppendPartition(data.GetDomain(i));
 
   writer->Write(pds, engineType);
+  
+  //TODO this is defined in the vtkh filter
+  //it is good to move it to the outside
+  RecordTime("ADIOSWrite", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - startT)
+                 .count());
 }
 
 //-----------------------------------------------------------------------------

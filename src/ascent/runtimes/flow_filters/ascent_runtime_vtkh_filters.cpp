@@ -3406,10 +3406,7 @@ void VTKHParticleAdvection::execute() {
       }
     }
   }
-
-  std::cout << "rank " << rank
-            << " start Streamline/ParticleAdvection:" << std::endl;
-
+  
   vtkh::DataSet *output = nullptr;
   if (params()["record_trajectories"].as_string().compare("true") == 0) {
     vtkh::Streamline sl;

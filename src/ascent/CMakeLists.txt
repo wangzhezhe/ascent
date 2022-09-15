@@ -400,11 +400,11 @@ if (ENABLE_SERIAL)
                           vtkm_filter_extra
                           vtkm_worklet
                           vtkm_source
-                          vtkm_cont
-                          vtkm_cont_testing
                           vtkm_lodepng
-                          vtkmdiympi_nompi
-                          )
+                          vtkm_cont)
+                          #vtkm_cont_testing
+                          #vtkmdiympi_nompi
+                          
 
       source_objects(${binary_dir}
                      "${ascent_device_sources}"
@@ -484,6 +484,11 @@ if(MPI_FOUND)
         list(APPEND ascent_mpi_thirdparty_libs dray_mpi)
     endif()
 
+    if(CUDA_FOUND)
+      message ("---cuda found for ascent_sources---")
+      set_source_files_properties(${ascent_sources} PROPERTIES LANGUAGE "CUDA")
+    endif()
+
     blt_add_library(
         NAME        ascent_mpi
         SOURCES     ${ascent_sources} ${ascent_mpi_sources}
@@ -498,6 +503,7 @@ if(MPI_FOUND)
     endif()
 
     if(CUDA_FOUND)
+      message ("---cuda found for ascehnt mpi---")
       target_compile_definitions(ascent_mpi PRIVATE ASCENT_CUDA_ENABLED)
     endif()
 
@@ -534,27 +540,30 @@ if(MPI_FOUND)
                           vtkm_filter_extra
                           vtkm_worklet
                           vtkm_source
-                          vtkm_cont
-                          vtkm_cont_testing
                           vtkm_lodepng
-                          vtkmdiympi_nompi
-                          )
+                          vtkmdiympi
+                          vtkm_cont)
+                          #vtkm_cont_testing
+                          #vtkmdiympi_nompi
+                          
 
       source_objects(${binary_dir}
                      "${ascent_device_sources}"
                      "${CMAKE_BINARY_DIR}/lib/librover_mpi.a"
                      "${targets_to_link}"
                      locations_on_disk)
+      
+      set_target_properties(ascent_mpi PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-      separate_arguments(params NATIVE_COMMAND "${CMAKE_CUDA_FLAGS} ${locations_on_disk}")
+      #separate_arguments(params NATIVE_COMMAND "${CMAKE_CUDA_FLAGS} ${locations_on_disk}")
       #message(STATUS "${CMAKE_CUDA_COMPILER} --device-link ${params} -lcudadevrt -lcudart_static --output-file bcal_vtkm_mpi.o")
-      add_custom_command(
-        TARGET ascent_mpi PRE_LINK
-        DEPENDS ascent_mpi rover_mpi
-        COMMAND ${CMAKE_CUDA_COMPILER} --device-link ${params} -lcudadevrt -lcudart_static --output-file bcal_vtkm_mpi.o
-        COMMENT "manual device link step for Ascent parallel"
-        )
-      install(FILES ${CMAKE_BINARY_DIR}/ascent/bcal_vtkm_mpi.o DESTINATION lib)
+      #add_custom_command(
+      #  TARGET ascent_mpi PRE_LINK
+      #  DEPENDS ascent_mpi rover_mpi
+      #  COMMAND ${CMAKE_CUDA_COMPILER} --device-link ${params} -lcudadevrt -lcudart_static --output-file bcal_vtkm_mpi.o
+      #  COMMENT "manual device link step for Ascent parallel"
+      # )
+      # install(FILES ${CMAKE_BINARY_DIR}/ascent/bcal_vtkm_mpi.o DESTINATION lib)
     endif()
 
 endif()

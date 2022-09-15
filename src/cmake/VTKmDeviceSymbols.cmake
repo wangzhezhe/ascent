@@ -14,8 +14,7 @@ function(source_objects binary_dir sources rover targets locations)
     endif()
   endforeach()
 
-  string(APPEND locations_on_disk "${rover} ")
-
+  string(APPEND locations_on_disk "${rover} ") 
   foreach(item IN LISTS targets)
     #message(STATUS "looking for location of target ${item}")
     set(props_to_search IMPORTED_LOCATION

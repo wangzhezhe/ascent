@@ -17,4 +17,5 @@
  test_problem 1
 
  visit_frequency=10
+ visit_initial_delay=0
 *endclover

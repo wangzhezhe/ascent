@@ -27,6 +27,7 @@
 #include <ascent_logging.hpp>
 #include <ascent_file_system.hpp>
 #include <ascent_data_object.hpp>
+#include <ascent_metadata.hpp>
 
 #include <vtkh/vtkh.hpp>
 #include <vtkh/DataSet.hpp>
@@ -156,6 +157,12 @@ ADIOS2::verify_params(const conduit::Node &params,
     info["errors"].append() = "filename with directory not supported for SST engine";
     res = false;
   }
+  
+  if(!params.has_child("endstep") ||
+      !params["endstep"].dtype().is_int64()){
+    info["errors"].append() = "missing required entry 'endstep'";
+    res = false;
+  }
 
   return res;
 }
@@ -164,10 +171,9 @@ ADIOS2::verify_params(const conduit::Node &params,
 void
 ADIOS2::execute()
 {
-  ASCENT_INFO("execute");
-
   std::string engineType = params()["engine"].as_string();
   std::string fileName   = params()["filename"].as_string();
+  int endStep = params()["endstep"].as_int64();
 
   if (writer == NULL)
     writer = new fides::io::DataSetAppendWriter(fileName);
@@ -208,8 +214,19 @@ ADIOS2::execute()
   vtkm::Id numDS = data.GetNumberOfDomains();
   for (vtkm::Id i = 0; i < numDS; i++)
     pds.AppendPartition(data.GetDomain(i));
+  
 
   writer->Write(pds, engineType);
+
+  //get the step info and detect if end it
+  Node meta = Metadata::n_metadata;
+  int cycle = meta["cycle"].to_int32();
+
+  if(cycle>=endStep){
+    writer->Close();
+    delete writer;
+    writer=NULL;
+  }
 }
 
 //-----------------------------------------------------------------------------

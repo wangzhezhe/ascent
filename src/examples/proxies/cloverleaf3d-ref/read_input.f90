@@ -55,6 +55,7 @@ SUBROUTINE read_input()
   complete=.FALSE.
 
   visit_frequency=0
+  visit_initial_delay=0
   summary_frequency=10
 
   dtinit=0.1_8
@@ -170,6 +171,9 @@ SUBROUTINE read_input()
       CASE('visit_frequency')
         visit_frequency=parse_getival(parse_getword(.TRUE.))
         IF(parallel%boss)WRITE(g_out,"(1x,a25,i12)")'visit_frequency',visit_frequency
+      CASE('visit_initial_delay')
+        visit_initial_delay=parse_getival(parse_getword(.TRUE.))
+        IF(parallel%boss)WRITE(g_out,"(1x,a25,i12)")'visit_initial_delay',visit_initial_delay
       CASE('summary_frequency')
         summary_frequency=parse_getival(parse_getword(.TRUE.))
         IF(parallel%boss)WRITE(g_out,"(1x,a25,i12)")'summary_frequency',summary_frequency

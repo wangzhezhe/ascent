@@ -119,6 +119,7 @@ MODULE definitions_module
                   ,dtdiv
 
    INTEGER      :: visit_frequency   &
+                  ,visit_initial_delay &
                   ,summary_frequency
 
    INTEGER         :: jdt,kdt

@@ -509,7 +509,10 @@ if(MPI_FOUND)
 
     if(VTKM_FOUND)
         vtkm_add_target_information(ascent_mpi DEVICE_SOURCES ${ascent_device_sources})
+        blt_add_target_compile_flags(TO ascent_mpi FLAGS "-DASCENT_VTKM_ENABLED")
+
     endif()
+    
     blt_add_target_compile_flags(TO ascent_mpi FLAGS "-DASCENT_MPI_ENABLED")
 
     # install target for mpi ver

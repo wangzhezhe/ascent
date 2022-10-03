@@ -33,10 +33,11 @@ SUBROUTINE hydro
   USE iso_c_binding
   USE conduit
   USE ascent
+  
   IMPLICIT NONE
 
   INTEGER         :: loc(1)
-  INTEGER         :: first_visit
+  INTEGER         :: first_visit,rank,err
 
   REAL(KIND=8)    :: timer,timerstart,wall_clock,step_clock
 
@@ -58,6 +59,8 @@ SUBROUTINE hydro
 
   timerstart = timer()
   first_visit = 1
+  CALL MPI_COMM_RANK(MPI_COMM_WORLD,rank,err)
+  !TODO, only the rank 0
   DO
 
     CALL ascent_timer_start(C_CHAR_"CLOVER_MAIN_LOOP"//C_NULL_CHAR)
@@ -88,17 +91,20 @@ SUBROUTINE hydro
     IF(summary_frequency.NE.0) THEN
       IF(MOD(step, summary_frequency).EQ.0) CALL field_summary()
     ENDIF
-    IF(visit_frequency.NE.0) THEN
 
-      IF(first_visit.EQ.1)
-        WRITE(    0,*) 'Sim computation time between visit ', timer()-timerstart
-        first_visit=0
-      ELSE
-        WRITE(    0,*) 'Sim computation time between visit ', timer()-visit_finish_time
+    IF(step.GE.visit_initial_delay) THEN
+      IF(MOD(step, visit_frequency).EQ.0) THEN
+  
+        IF(first_visit.EQ.1) THEN
+          IF(rank==0) WRITE(*,*) 'Sim computation time between visit',timer()-timerstart
+          first_visit=0
+        ELSE
+          IF(rank==0) WRITE(*,*) 'Sim computation time between visit',timer()-visit_finish_time
+        ENDIF
+
+        CALL visit(my_ascent)
+        visit_finish_time=timer()
       ENDIF
-      
-      IF(MOD(step, visit_frequency).EQ.0) CALL visit(my_ascent)
-      visit_finish_time = timer
     ENDIF
 
     ! Sometimes there can be a significant start up cost that appears in the first step.

@@ -3374,7 +3374,25 @@ void VTKHParticleAdvection::execute() {
       float z = seedBBox[4] + dz * distribution(generator);
       seeds.push_back(vtkm::Particle({x, y, z}, i));
     }
-    // auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
+    //auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
+
+
+    //Make the paricle ID's unique (the reader's code uses this one)
+    //otherwise, there are issues when two seeds have same id in parallel case
+    std::vector<int> particlesPerRank(numRanks, 0);
+    particlesPerRank[rank] = numSeeds;
+    MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+    int offset = 0;
+    for (int i = 0; i < rank; i++)
+      offset += particlesPerRank[i];
+
+    if (offset > 0)
+    {
+      for (auto& p : seeds)
+        p.ID += offset;
+    }
+
   }
 
   // record the seeds files

@@ -72,6 +72,7 @@
 #include <vtkh/vtkh.hpp>
 #include <vtkm/cont/DataSet.h>
 #include <vtkm/io/VTKDataSetWriter.h>
+#include <vtkm/filter/particleadvection/BoundsMap.h>
 
 #include <ascent_expression_eval.hpp>
 #include <ascent_runtime_conduit_to_vtkm_parsing.hpp>
@@ -3368,30 +3369,52 @@ void VTKHParticleAdvection::execute() {
     // Generate seeds
     // only necessary for the box method
     int numSeeds = get_int32(params()["num_seeds"], data_object);
-    for (int i = 0; i < numSeeds; i++) {
+ 
+    //Dave begin changes
+    //Set seeds for BBox
+    std::vector<vtkm::Vec3f> allSeeds;
+    for (int i = 0; i < numSeeds; i++)
+    {
       float x = seedBBox[0] + dx * distribution(generator);
       float y = seedBBox[2] + dy * distribution(generator);
       float z = seedBBox[4] + dz * distribution(generator);
-      seeds.push_back(vtkm::Particle({x, y, z}, i));
+      allSeeds.push_back({x, y, z});
     }
-    //auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
+    // auto seedArray = vtkm::cont::make_ArrayHandle(seeds, vtkm::CopyFlag::On);
 
+    vtkm::Id numDomains = data.GetNumberOfDomains();
+    std::vector<vtkm::cont::DataSet> dataSetVec;
+    for (vtkm::Id i = 0; i < numDomains; i++)
+      dataSetVec.push_back(data.GetDomain(i));
 
-    //Make the paricle ID's unique (the reader's code uses this one)
-    //otherwise, there are issues when two seeds have same id in parallel case
-    std::vector<int> particlesPerRank(numRanks, 0);
-    particlesPerRank[rank] = numSeeds;
-    MPI_Allreduce(MPI_IN_PLACE, particlesPerRank.data(), numRanks, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    vtkm::filter::particleadvection::BoundsMap boundsMap(dataSetVec);
 
-    int offset = 0;
-    for (int i = 0; i < rank; i++)
-      offset += particlesPerRank[i];
-
-    if (offset > 0)
+    // select seeds that belongs to current domain that the rank owns
+    for (int i = 0; i < numSeeds; i++)
     {
-      for (auto& p : seeds)
-        p.ID += offset;
+      auto blockIds = boundsMap.FindBlocks(allSeeds[i]);
+      if (!blockIds.empty() && boundsMap.FindRank(blockIds[0]) == rank)
+        seeds.push_back({allSeeds[i], i});
     }
+
+    std::vector<int> seedCounts(numRanks, 0);
+    seedCounts[rank] = seeds.size();
+    MPI_Allreduce(MPI_IN_PLACE, seedCounts.data(), numRanks, MPI_INT,
+                  MPI_SUM, MPI_COMM_WORLD);
+    int totNum =  0;
+    for (int i = 0; i < numRanks; i++){
+        totNum += seedCounts[i];
+    }
+    if(totNum!=numSeeds){
+      throw std::runtime_error("totNum is supposed to equal numSeeds");
+    }
+   
+    //for (int i = 0; i < numRanks; i++)
+    //{
+    //  if (i == rank)
+    //    std::cout<<rank<<": numSeeds= "<<seeds.size()<<" of "<<totNum<<std::endl;
+    //}
+    //Dave end changes
 
   }
 

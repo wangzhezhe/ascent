@@ -3456,6 +3456,7 @@ void VTKHParticleAdvection::execute() {
     sl.SetSeeds(seeds);
     sl.SetField(field_name);
     sl.SetInput(&data);
+    sl.SetIterationStep(GetCycle());
     sl.Update();
     output = sl.GetOutput();
   } else {
@@ -3465,6 +3466,7 @@ void VTKHParticleAdvection::execute() {
     pa.SetSeeds(seeds);
     pa.SetField(field_name);
     pa.SetInput(&data);
+    pa.SetIterationStep(GetCycle());
     pa.Update();
     output = pa.GetOutput();
   }

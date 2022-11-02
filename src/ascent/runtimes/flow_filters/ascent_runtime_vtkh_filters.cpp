@@ -3447,7 +3447,13 @@ void VTKHParticleAdvection::execute() {
       }
     }
   }
-  
+
+  auto prepareOK = std::chrono::steady_clock::now();
+  RecordTime("ParticleAdvectionPrepare", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 prepareOK - startT)
+                 .count());
+
   vtkh::DataSet *output = nullptr;
   if (params()["record_trajectories"].as_string().compare("true") == 0) {
     vtkh::Streamline sl;
@@ -3470,6 +3476,12 @@ void VTKHParticleAdvection::execute() {
     pa.Update();
     output = pa.GetOutput();
   }
+
+  RecordTime("ParticleAdvectionFilter", GetCycle(),
+             std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - prepareOK)
+                 .count());
+
   // std::cout << "--debug output start---" << std::endl;
   // output->PrintSummary(std::cout);
   // std::cout << "--debug output end---" << std::endl;
@@ -3511,11 +3523,6 @@ void VTKHParticleAdvection::execute() {
   DataObject *res = new DataObject(new_coll);
   delete output;
   set_output<DataObject>(res);
-
-  RecordTime("ParticleAdvectionFilter", GetCycle(),
-             std::chrono::duration<double, std::milli>(
-                 std::chrono::steady_clock::now() - startT)
-                 .count());
 }
 
 //-----------------------------------------------------------------------------

@@ -3473,8 +3473,12 @@ void VTKHParticleAdvection::execute() {
   // std::cout << "--debug output start---" << std::endl;
   // output->PrintSummary(std::cout);
   // std::cout << "--debug output end---" << std::endl;
-
+  // if the record_trajectories is false, it is meaningless to set this as true
   if (params()["write_streamlines"].as_string().compare("true") == 0) {
+    if(params()["record_trajectories"].as_string().compare("false") == 0){
+      ASCENT_ERROR("write_streamlines when the record_trajectories is true");
+      return;
+    }
     int numDomains = output->GetNumberOfDomains();
     if(rank==0){
       std::cerr << "num domains " << numDomains << std::endl;
@@ -3485,6 +3489,17 @@ void VTKHParticleAdvection::execute() {
               GetCycle(), rank, i);
       vtkm::io::VTKDataSetWriter write(fileNm);
       write.WriteDataSet(output->GetDomain(i));
+    }
+    //also output the raw data for checking
+    //the data output by raw hdf5 contains the ghost area
+
+    int rawNumDomains = data.GetNumberOfDomains();
+    for (int i = 0; i < rawNumDomains; i++) {
+      char fileNm[128];
+      sprintf(fileNm, "ascentRaw.step%d.rank%d.domain%d.vtk",
+              GetCycle(), rank, i);
+      vtkm::io::VTKDataSetWriter write(fileNm);
+      write.WriteDataSet(data.GetDomain(i));
     }
   }
 

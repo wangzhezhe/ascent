@@ -94,6 +94,7 @@ CheckForSettingsFile(std::string file_name,
     {
       has_file = 1;
     }
+
 #ifdef ASCENT_MPI_ENABLED
     MPI_Bcast(&has_file, 1, MPI_INT, 0, mpi_comm);
 #endif
@@ -107,6 +108,7 @@ CheckForSettingsFile(std::string file_name,
 
     if(rank == 0)
     {
+
       std::string curr,next;
 
       std::string protocol = "json";
@@ -124,8 +126,7 @@ CheckForSettingsFile(std::string file_name,
       try
       {
         conduit::Node file_node;
-        file_node.load(file_name, protocol);
-
+        file_node.load(file_name, protocol);        
         if(merge)
         {
           node.update(file_node);
@@ -136,6 +137,7 @@ CheckForSettingsFile(std::string file_name,
         }
 
         actions_file_valid = 1;
+
       }
       catch(conduit::Error &e)
       {
@@ -159,6 +161,7 @@ CheckForSettingsFile(std::string file_name,
 #ifdef ASCENT_MPI_ENABLED
     relay::mpi::broadcast_using_schema(node, 0, mpi_comm);
 #endif
+
 }
 
 //-----------------------------------------------------------------------------
@@ -256,10 +259,25 @@ Ascent::open(const conduit::Node &options)
         else if(runtime_type == "ascent")
         {
             m_runtime = new AscentRuntime();
-            if(m_options.has_path("runtime/vtkm/backend"))
+            //use the export ASCENT_VTKM_BACKEND
+            char const* tmp = getenv("ASCENT_VTKM_BACKEND");
+            std::string backend;
+            if ( tmp == nullptr) {
+                std::cout << "no ASCENT_VTKM_BACKEND env, use openmp";
+                backend = "openmp";
+            } else {
+                backend=std::string(tmp);
+            }
+
+            //if(m_options.has_path("runtime/vtkm/backend"))
             {
+               //std::cout << "ascent debug has_path runtime/vtkm"<< std::endl;
+
     #if defined(ASCENT_VTKH_ENABLED)
-              std::string backend = m_options["runtime/vtkm/backend"].as_string();
+    
+              //std::string backend = m_options["runtime/vtkm/backend"].as_string();
+              
+              std::cout << "ascent vtkm backend is:" << backend << std::endl;
               if(backend == "serial")
               {
                 vtkh::ForceSerial();

@@ -133,6 +133,13 @@ int GetCycle() {
   return cycle;
 }
 
+double GetPhysicalTime(){
+  Node meta = Metadata::n_metadata;
+  double physicalTime = meta["time"].to_float64();
+  return physicalTime;
+}
+
+
 void IncCounter(const std::string &nm) {
   std::lock_guard<std::mutex> guard(vtkhCounterMapMutex);
   vtkhcounterMap[nm]++;
@@ -3476,6 +3483,8 @@ void VTKHParticleAdvection::execute() {
     pa.Update();
     output = pa.GetOutput();
   }
+  
+  //std::cout << "cycle value: " << GetCycle() << " physical time: " << GetPhysicalTime() << std::endl;
 
   RecordTime("ParticleAdvectionFilter", GetCycle(),
              std::chrono::duration<double, std::milli>(
